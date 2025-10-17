@@ -1,0 +1,3 @@
+/workspaces/remote-management/build/CMakeFiles/remote.dir
+/workspaces/remote-management/build/CMakeFiles/edit_cache.dir
+/workspaces/remote-management/build/CMakeFiles/rebuild_cache.dir

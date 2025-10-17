@@ -1,0 +1,1 @@
+/usr/bin/cc -g CMakeFiles/remote.dir/src/core/remote_management_service.c.o CMakeFiles/remote.dir/src/remote_management_thread.c.o -o remote 

@@ -1,0 +1,12 @@
+[
+{
+  "directory": "/workspaces/remote-management/build",
+  "command": "/usr/bin/cc  -I/workspaces/remote-management/inc -g -std=gnu11 -o CMakeFiles/remote.dir/src/core/remote_management_service.c.o -c /workspaces/remote-management/src/core/remote_management_service.c",
+  "file": "/workspaces/remote-management/src/core/remote_management_service.c"
+},
+{
+  "directory": "/workspaces/remote-management/build",
+  "command": "/usr/bin/cc  -I/workspaces/remote-management/inc -g -std=gnu11 -o CMakeFiles/remote.dir/src/remote_management_thread.c.o -c /workspaces/remote-management/src/remote_management_thread.c",
+  "file": "/workspaces/remote-management/src/remote_management_thread.c"
+}
+]
