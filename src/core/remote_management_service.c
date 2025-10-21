@@ -88,11 +88,32 @@ static remote_management_protocol_message_qitem_t remote_management_protocol_mes
 static int remote_management_protocol_message_qhead = 0, remote_management_protocol_message_qtail = 0;
 static pthread_mutex_t   remote_management_protocol_message_qmtx = PTHREAD_MUTEX_INITIALIZER;
 
+//ota进度消息
+typedef struct
+{
+  u32 service_id;
+  UPDATE_STATUS status;
+  char msg[128];
+} remote_management_ota_progress_qitem_t;
+static remote_management_ota_progress_qitem_t remote_management_ota_progress_queue[REMENTE_MANAGEMENT_QSIZE];
+static int remote_management_ota_progress_qhead = 0, remote_management_ota_progress_qtail = 0;
+static pthread_mutex_t   remote_management_ota_progress_qmtx = PTHREAD_MUTEX_INITIALIZER;
 
+//ota升级结果
+typedef struct
+{
+  u32 service_id;
+  char msg[128];
+} remote_management_ota_inform_qitem_t;
+static remote_management_ota_inform_qitem_t remote_management_ota_inform_queue[REMENTE_MANAGEMENT_QSIZE];
+static int remote_management_ota_inform_qhead = 0, remote_management_ota_inform_qtail = 0;
+static pthread_mutex_t   remote_management_ota_inform_qmtx = PTHREAD_MUTEX_INITIALIZER;
 
 static remote_management_event_cb_t   remote_management_event_cb = NULL;   /* 初始为空，表示未注册 */
 static remote_management_ulog_cb_t    remote_management_ulog_cb = NULL;   /* 初始为空，表示未注册 */
 static remote_management_protocol_message_cb_t remote_management_protocol_message_cb = NULL;   /* 初始为空，表示未注册 */
+static remote_management_ota_progress_cb_t   remote_management_ota_progress_cb = NULL;   /* 初始为空，表示未注册 */
+static remote_management_ota_inform_cb_t   remote_management_ota_inform_cb = NULL;   /* 初始为空，表示未注册 */
 /******************************************************************************
 **API函数实现
 ******************************************************************************/
@@ -123,6 +144,22 @@ int remote_management_register_protocol_message_cb(remote_management_protocol_me
     if (cb == NULL)
     	return -1;
     remote_management_protocol_message_cb = cb;
+    return 0;
+}
+
+int remote_management_register_ota_progress_cb(remote_management_ota_progress_cb_t cb)
+{
+    if (cb == NULL)
+    	return -1;
+    remote_management_ota_progress_cb = cb;
+    return 0;
+}
+
+int remote_management_register_ota_inform_cb(remote_management_ota_inform_cb_t cb)
+{
+    if (cb == NULL)
+    	return -1;
+    remote_management_ota_inform_cb = cb;
     return 0;
 }
 
@@ -286,3 +323,87 @@ void remote_management_fire_protocol_message(u32 service_id,u32 dev_id,SERVICE_P
     pthread_mutex_unlock(&remote_management_protocol_message_qmtx);
 }
 
+void remote_management_fire_ota_progress(u32 service_id, UPDATE_STATUS status, const char *msg)
+{
+    /* 1. 构造事件 */
+	remote_management_ota_progress_qitem_t it;
+    it.service_id = service_id;
+    it.status = status;
+    strncpy(it.msg, msg, sizeof(it.msg) - 1);
+    it.msg[sizeof(it.msg) - 1] = '\0';
+
+    pthread_mutex_lock(&remote_management_ota_progress_qmtx);
+
+    /* 2. 入队 */
+    int next = (remote_management_ota_progress_qtail + 1) % REMENTE_MANAGEMENT_QSIZE;
+    while (next == remote_management_ota_progress_qhead)
+    {               /* 满队列 */
+        struct timespec ts = {0, 1000000}; /* 1 ms */
+        pthread_mutex_unlock(&remote_management_ota_progress_qmtx);      /* 先放锁再睡 */
+        nanosleep(&ts, NULL);
+        pthread_mutex_lock(&remote_management_ota_progress_qmtx);        /* 醒来再抢锁 */
+        next = (remote_management_ota_progress_qtail + 1) % REMENTE_MANAGEMENT_QSIZE;
+    }
+    remote_management_ota_progress_queue[remote_management_ota_progress_qtail] = it;
+    remote_management_ota_progress_qtail = next;
+
+    /* 3. 立即顺序执行回调（仍持有锁，天然串行） */
+    if (remote_management_ota_progress_cb)
+    {
+        int idx = remote_management_ota_progress_qhead;
+        while (idx != remote_management_ota_progress_qtail)
+        {
+        	remote_management_ota_progress_qitem_t *e = &remote_management_ota_progress_queue[idx];
+            remote_management_ota_progress_cb(e->service_id,e->status, e->msg);
+            idx = (idx + 1) % REMENTE_MANAGEMENT_QSIZE;
+        }
+        remote_management_ota_progress_qhead = remote_management_ota_progress_qtail;   /* 全部处理完，队列清空 */
+    }
+    else
+    {
+        printf("ota_progress_cb_unregistered\n");
+    }
+    pthread_mutex_unlock(&remote_management_ota_progress_qmtx);
+}
+
+void remote_management_fire_ota_inform(u32 service_id, const char *msg)
+{
+    /* 1. 构造事件 */
+	remote_management_ota_inform_qitem_t it;
+    it.service_id = service_id;
+    strncpy(it.msg, msg, sizeof(it.msg) - 1);
+    it.msg[sizeof(it.msg) - 1] = '\0';
+
+    pthread_mutex_lock(&remote_management_ota_inform_qmtx);
+
+    /* 2. 入队 */
+    int next = (remote_management_ota_inform_qtail + 1) % REMENTE_MANAGEMENT_QSIZE;
+    while (next == remote_management_ota_inform_qhead)
+    {               /* 满队列 */
+        struct timespec ts = {0, 1000000}; /* 1 ms */
+        pthread_mutex_unlock(&remote_management_ota_inform_qmtx);      /* 先放锁再睡 */
+        nanosleep(&ts, NULL);
+        pthread_mutex_lock(&remote_management_ota_inform_qmtx);        /* 醒来再抢锁 */
+        next = (remote_management_ota_inform_qtail + 1) % REMENTE_MANAGEMENT_QSIZE;
+    }
+    remote_management_ota_inform_queue[remote_management_ota_inform_qtail] = it;
+    remote_management_ota_inform_qtail = next;
+
+    /* 3. 立即顺序执行回调（仍持有锁，天然串行） */
+    if (remote_management_ota_inform_cb)
+    {
+        int idx = remote_management_ota_inform_qhead;
+        while (idx != remote_management_ota_inform_qtail)
+        {
+        	remote_management_ota_inform_qitem_t *e = &remote_management_ota_inform_queue[idx];
+            remote_management_ota_inform_cb(e->service_id, e->msg);
+            idx = (idx + 1) % REMENTE_MANAGEMENT_QSIZE;
+        }
+        remote_management_ota_inform_qhead = remote_management_ota_inform_qtail;   /* 全部处理完，队列清空 */
+    }
+    else
+    {
+        printf("ota_inform_cb_unregistered\n");
+    }
+    pthread_mutex_unlock(&remote_management_ota_inform_qmtx);
+}

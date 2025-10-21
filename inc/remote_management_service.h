@@ -71,15 +71,27 @@ typedef enum
 	REMOTE_MANAGEMENT_ERROR,        //可恢复类错误信息
 	REMOTE_MANAGEMENT_FATAL,        //致命错误信息
 }REMOTE_MANAGEMENT_ULOG_LEVEL;
+
+typedef enum
+{
+	UPDATE_FAILED  = -1,    // 升级失败
+	DOWNLOAD_FAILED = -2,   // 下载失败
+	VERIFY_FAILED   = -3,   // 校验失败
+	FLASH_FAILED    = -4,   // 烧写失败
+} UPDATE_STATUS;
+
 /******************************************************************************
 **API函数实现
 ******************************************************************************/
 REMOTE_MANAGEMENT_SEVICE_EXT void remote_management_fire_event(u32 service_id, const char *msg);
 REMOTE_MANAGEMENT_SEVICE_EXT void remote_management_fire_ulog(REMOTE_MANAGEMENT_ULOG_LEVEL level, const char *msg);
 REMOTE_MANAGEMENT_SEVICE_EXT void remote_management_fire_protocol_message(u32 service_id,u32 dev_id,SERVICE_PROTOCOL_TYPE protocol_type, const char *msg,u16 len);
+REMOTE_MANAGEMENT_SEVICE_EXT void remote_management_fire_ota_progress(u32 service_id, UPDATE_STATUS status, const char *msg);
+REMOTE_MANAGEMENT_SEVICE_EXT void remote_management_fire_ota_inform(u32 service_id, const char *msg);
 
 #ifdef __cplusplus
 }
 #endif
 #endif   /* end */
 
+                                                      

@@ -64,7 +64,11 @@ typedef void (*remote_management_event_cb_t)(u32 service_id, const char *msg);
 typedef void (*remote_management_ulog_cb_t)(REMOTE_MANAGEMENT_ULOG_LEVEL level, const char *msg);
 
 typedef void (*remote_management_protocol_message_cb_t)(u32 service_id,u32 dev_id,SERVICE_PROTOCOL_TYPE protocol_type, const char *msg,u16 len);
-/******************************************************************************
+
+typedef void (*remote_management_ota_progress_cb_t)(u32 service_id, UPDATE_STATUS status, const char *msg);
+
+typedef void (*remote_management_ota_inform_cb_t)(u32 service_id, const char *msg);
+/******************************************************************************..............
 **全局变量定义
 ******************************************************************************/
 
@@ -74,6 +78,8 @@ typedef void (*remote_management_protocol_message_cb_t)(u32 service_id,u32 dev_i
 REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int remote_management_register_event_cb(remote_management_event_cb_t cb);
 REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int remote_management_register_ulog_cb(remote_management_ulog_cb_t cb);
 REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int remote_management_register_protocol_message_cb(remote_management_protocol_message_cb_t cb);
+REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int remote_management_register_ota_progress_cb(remote_management_ota_progress_cb_t cb);
+REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int remote_management_register_ota_inform_cb(remote_management_ota_inform_cb_t cb);
 
 #ifdef __cplusplus
 }
