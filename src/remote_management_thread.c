@@ -756,8 +756,8 @@ void *remote_management_thread_entry(void *parameter)
     remote_management_register_event_cb(remote_management_event_handler);
     remote_management_register_ulog_cb(remote_management_ulog_handler);
     remote_management_register_protocol_message_cb(remote_management_protocol_message_handler);
-    remote_mamagement_register_ota_progress_cb(remote_management_ota_progress_handler);
-    remote_mamagement_register_ota_inform_cb(remote_management_ota_inform_handler);
+    remote_management_register_ota_progress_cb(remote_management_ota_progress_handler);
+    remote_management_register_ota_inform_cb(remote_management_ota_inform_handler);
     while (1)
     {
         if (mqtt_connect(&remote_management_client) == MQTTCLIENT_SUCCESS)
