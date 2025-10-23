@@ -65,9 +65,9 @@ typedef void (*remote_management_ulog_cb_t)(REMOTE_MANAGEMENT_ULOG_LEVEL level, 
 
 typedef void (*remote_management_protocol_message_cb_t)(u32 service_id,u32 dev_id,SERVICE_PROTOCOL_TYPE protocol_type, const char *msg,u16 len);
 
-typedef void (*remote_management_ota_progress_cb_t)(u32 service_id, UPDATE_STATUS status, const char *msg);
+typedef void (*remote_management_ota_progress_cb_t)(const char *service_id, UPDATE_STATUS status, const char *msg);
 
-typedef void (*remote_management_ota_inform_cb_t)(u32 service_id, const char *msg);
+typedef void (*remote_management_ota_inform_cb_t)(const char *service_id, const char *msg);
 /******************************************************************************..............
 **全局变量定义
 ******************************************************************************/

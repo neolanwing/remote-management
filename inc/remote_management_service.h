@@ -59,7 +59,26 @@ extern "C" {
 /******************************************************************************
 **结构类型定义
 ******************************************************************************/
-
+// 用于存储重启时升级信息的结构体
+typedef struct {
+    char version[64];
+    char id[32];
+} ota_reboot_status_t;
+// 用于升级指令的结构体
+typedef struct
+{
+    char id[32]; // 命令ID
+    int code;
+    struct {
+        int size;
+        char sign[64];
+        char version[64];
+        int isDiff;
+        char url[MAX_PATH_LEN];
+        char signMethod[32];
+        char md5[64];
+    } data;
+} ota_upgrade_cmd_t;
 /******************************************************************************
 **全局变量定义
 ******************************************************************************/
@@ -86,8 +105,32 @@ typedef enum
 REMOTE_MANAGEMENT_SEVICE_EXT void remote_management_fire_event(u32 service_id, const char *msg);
 REMOTE_MANAGEMENT_SEVICE_EXT void remote_management_fire_ulog(REMOTE_MANAGEMENT_ULOG_LEVEL level, const char *msg);
 REMOTE_MANAGEMENT_SEVICE_EXT void remote_management_fire_protocol_message(u32 service_id,u32 dev_id,SERVICE_PROTOCOL_TYPE protocol_type, const char *msg,u16 len);
-REMOTE_MANAGEMENT_SEVICE_EXT void remote_management_fire_ota_progress(u32 service_id, UPDATE_STATUS status, const char *msg);
-REMOTE_MANAGEMENT_SEVICE_EXT void remote_management_fire_ota_inform(u32 service_id, const char *msg);
+REMOTE_MANAGEMENT_SEVICE_EXT void remote_management_fire_ota_progress(const char *service_id, UPDATE_STATUS status, const char *msg);
+REMOTE_MANAGEMENT_SEVICE_EXT void remote_management_fire_ota_inform(const char *service_id, const char *msg);
+
+/**
+ * OTA升级相关函数声明
+ */
+
+// MD5 文件计算函数 (OpenSSL 实现)
+REMOTE_MANAGEMENT_SEVICE_EXT int md5_file(const char *filePath, char *md5_out);
+
+// 文件下载函数 (libcurl 实现)
+REMOTE_MANAGEMENT_SEVICE_EXT int http_download_file(const char *url, const char *savePath, int overwrite);
+
+// ZIP 解压函数 (system/unzip 实现)
+REMOTE_MANAGEMENT_SEVICE_EXT int unzip_file(const char *zipPath, const char *destDir);
+
+// 获取文件大小 (POSIX stat 实现)
+REMOTE_MANAGEMENT_SEVICE_EXT long get_file_size(const char *filePath);
+
+// OTA 升级核心处理函数
+REMOTE_MANAGEMENT_SEVICE_EXT int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd);
+
+// 升级状态文件操作
+REMOTE_MANAGEMENT_SEVICE_EXT int write_ota_reboot_status(const char *version, const char *id);
+REMOTE_MANAGEMENT_SEVICE_EXT ota_reboot_status_t *check_ota_finish_status(void);
+REMOTE_MANAGEMENT_SEVICE_EXT void clear_ota_finish_status(void);
 
 #ifdef __cplusplus
 }

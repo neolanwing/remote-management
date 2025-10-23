@@ -75,6 +75,7 @@ char remote_management_device_protocolmessage_topic[64]="/sys/%s/protocolmessage
 char remote_management_device_log_topic[64]="/sys/%s/log/post";
 char remote_management_device_ota_progress_topic[64]="/ota/device/progress/%s";
 char remote_management_device_ota_inform_topic[64]="/ota/device/inform/%s";
+char remote_management_device_ota_upgrade_topic[64]="/ota/device/upgrade/%s";
 
 
 /******************************************************************************
@@ -452,9 +453,9 @@ void remote_management_protocol_message_handler(u32 service_id,u32 dev_id,SERVIC
             }
 }
 
-void remote_management_ota_progress_handler(u32 service_id, UPDATE_STATUS status, const char *msg)
+void remote_management_ota_progress_handler(const char *service_id, UPDATE_STATUS status, const char *msg)
 {
-    printf("into ota_progress handler,service_id:%d,status:%d\n",service_id,status);
+    printf("into ota_progress handler,service_id:%s,status:%d\n",service_id,status);
 
     if(remote_management_online_flag==0)
     	return;
@@ -478,11 +479,9 @@ void remote_management_ota_progress_handler(u32 service_id, UPDATE_STATUS status
                         cJSON *json_obj_params = cJSON_CreateObject();
                         if(json_obj_params)
                         {
-                        	char msg_id_string[32]={0};
-                        	sprintf(msg_id_string,"%u",service_id);
                             char status_string[16];
                             sprintf(status_string,"%d",status);
-                            cJSON_AddStringToObject(json_obj, "id", msg_id_string);
+                            cJSON_AddStringToObject(json_obj, "id", service_id);
                             cJSON_AddItemToObject(json_obj, "params", json_obj_params);
                             cJSON_AddStringToObject(json_obj_params,"step",status_string);
                             cJSON_AddStringToObject(json_obj_params,"desc",msg);
@@ -504,7 +503,7 @@ void remote_management_ota_progress_handler(u32 service_id, UPDATE_STATUS status
             }
 }
 
-void remote_management_ota_inform_handler(u32 service_id, const char *msg)
+void remote_management_ota_inform_handler(const char *service_id, const char *msg)
 {
     printf("into ota_inform handler,service_id:%d,msg:%s\n",service_id,msg);
 
@@ -530,9 +529,7 @@ void remote_management_ota_inform_handler(u32 service_id, const char *msg)
                         cJSON *json_obj_params = cJSON_CreateObject();
                         if(json_obj_params)
                         {
-                        	char msg_id_string[32]={0};
-                        	sprintf(msg_id_string,"%u",service_id);
-                            cJSON_AddStringToObject(json_obj, "id", msg_id_string);
+                            cJSON_AddStringToObject(json_obj, "id", service_id);
                             cJSON_AddStringToObject(json_obj, "sn", get_terminal_id());
                             cJSON_AddItemToObject(json_obj, "params", json_obj_params);
                             cJSON_AddStringToObject(json_obj_params,"version",msg);
@@ -694,6 +691,49 @@ static int msgarrvd(void *context, char *topicName, int topicLen, MQTTClient_mes
 {
     char* payloadptr;
     printf("remote_management Message arrived\n");
+
+    char *sn = get_terminal_id();
+    char expected_topic[128];
+    snprintf(expected_topic, sizeof(expected_topic), remote_management_device_ota_upgrade_topic, sn);
+    if (strcmp(topicName, expected_topic) == 0)
+    {
+        ota_upgrade_cmd_t cmd = {0};
+        cJSON *root = cJSON_Parse((const char *)message->payload);
+        
+        if (root)
+        {
+            cJSON *id_item = cJSON_GetObjectItem(root, "id");
+            cJSON *data_item = cJSON_GetObjectItem(root, "data");
+
+            if (id_item && cJSON_IsString(id_item)) strncpy(cmd.id, id_item->valuestring, sizeof(cmd.id) - 1);
+            
+            if (data_item && cJSON_IsObject(data_item)) {
+                cJSON *url_item = cJSON_GetObjectItem(data_item, "url");
+                cJSON *version_item = cJSON_GetObjectItem(data_item, "version");
+                cJSON *md5_item = cJSON_GetObjectItem(data_item, "md5");
+                cJSON *sign_item = cJSON_GetObjectItem(data_item, "sign");
+                cJSON *size_item = cJSON_GetObjectItem(data_item, "size");
+                
+                if (url_item && cJSON_IsString(url_item)) strncpy(cmd.data.url, url_item->valuestring, sizeof(cmd.data.url) - 1);
+                if (version_item && cJSON_IsString(version_item)) strncpy(cmd.data.version, version_item->valuestring, sizeof(cmd.data.version) - 1);
+                if (md5_item && cJSON_IsString(md5_item)) strncpy(cmd.data.md5, md5_item->valuestring, sizeof(cmd.data.md5) - 1);
+                if (sign_item && cJSON_IsString(sign_item)) strncpy(cmd.data.sign, sign_item->valuestring, sizeof(cmd.data.sign) - 1);
+                if (size_item && cJSON_IsNumber(size_item)) cmd.data.size = size_item->valueint;
+            }
+            
+            cJSON_Delete(root);
+            
+            // 检查关键参数（防止崩溃）
+            if (strlen(cmd.data.url) > 0 && cmd.data.size > 0) { 
+                ota_upgrade_handler(&cmd);
+            } else {
+                 // 参数不全，报升级失败
+                remote_management_fire_ota_progress(cmd.id, UPDATE_FAILED, "-1升级失败: Missing parameters in command");
+            }
+        }
+
+        return 1;
+    }
     payloadptr = message->payload;
         cJSON* cjson_up = cJSON_Parse(payloadptr);//将JSON字符串转换成JSON结构体
     if(cjson_up == NULL)                       //判断转换是否成功
@@ -753,6 +793,29 @@ void *remote_management_thread_entry(void *parameter)
     {
         printf("mqttupClient_setCallbacks_success\n");
     }
+
+    // 【全局初始化】: 在线程开始时进行 libcurl 全局初始化
+    CURLcode init_res = curl_global_init(CURL_GLOBAL_DEFAULT);
+    if (init_res != CURLE_OK) {
+        printf("Fatal Error: libcurl global init failed: %s\n", curl_easy_strerror(init_res));
+    }
+
+    char *sn = get_terminal_id();
+    char ota_topic[128];
+    snprintf(ota_topic, sizeof(ota_topic), remote_management_device_ota_upgrade_topic, sn);
+
+
+    // ---- 步骤 8. 启动后状态判断与上报 (检查 upgrade.txt) ----
+    ota_reboot_status_t *status = check_ota_finish_status();
+    if (status != NULL)
+    {
+        // 升级成功，调用 ota_inform 上报成功消息
+        remote_management_fire_ota_inform(status->id, status->version); // msg为下发的version字段值
+        printf("OTA upgrade success reported for version: %s (ID: %s)\n", status->version, status->id);
+        
+        // 清除标志文件
+        clear_ota_finish_status();
+    }
     remote_management_register_event_cb(remote_management_event_handler);
     remote_management_register_ulog_cb(remote_management_ulog_handler);
     remote_management_register_protocol_message_cb(remote_management_protocol_message_handler);
@@ -765,6 +828,8 @@ void *remote_management_thread_entry(void *parameter)
             printf("remote management connect success\n");
 
             MQTTClient_subscribe(remote_management_client, TOPIC, QOS);
+            // 订阅 OTA 升级主题
+            MQTTClient_subscribe(remote_management_client, ota_topic, QOS);
 
             while (1)
             {
@@ -780,6 +845,8 @@ void *remote_management_thread_entry(void *parameter)
     }
 
     MQTTClient_destroy(&remote_management_client);
+    // 当程序/线程即将终止时调用，释放所有 libcurl 内部资源
+    curl_global_cleanup();
     return NULL;
 }
 
