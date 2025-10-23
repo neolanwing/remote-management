@@ -505,7 +505,7 @@ void remote_management_ota_progress_handler(const char *service_id, UPDATE_STATU
 
 void remote_management_ota_inform_handler(const char *service_id, const char *msg)
 {
-    printf("into ota_inform handler,service_id:%d,msg:%s\n",service_id,msg);
+    printf("into ota_inform handler,service_id:%s,msg:%s\n",service_id,msg);
 
     if(remote_management_online_flag==0)
     	return;

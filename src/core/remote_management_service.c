@@ -336,7 +336,8 @@ void remote_management_fire_ota_progress(const char *service_id, UPDATE_STATUS s
 {
     /* 1. 构造事件 */
 	remote_management_ota_progress_qitem_t it;
-    it.service_id = service_id;
+    strncpy(it.service_id, service_id, sizeof(it.service_id) - 1);
+    it.service_id[sizeof(it.service_id) - 1] = '\0';
     it.status = status;
     strncpy(it.msg, msg, sizeof(it.msg) - 1);
     it.msg[sizeof(it.msg) - 1] = '\0';
@@ -379,7 +380,8 @@ void remote_management_fire_ota_inform(const char *service_id, const char *msg)
 {
     /* 1. 构造事件 */
 	remote_management_ota_inform_qitem_t it;
-    it.service_id = service_id;
+    strncpy(it.service_id, service_id, sizeof(it.service_id) - 1);
+    it.service_id[sizeof(it.service_id) - 1] = '\0';
     strncpy(it.msg, msg, sizeof(it.msg) - 1);
     it.msg[sizeof(it.msg) - 1] = '\0';
 
