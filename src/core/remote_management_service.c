@@ -123,6 +123,10 @@ static remote_management_ulog_cb_t    remote_management_ulog_cb = NULL;   /* 初
 static remote_management_protocol_message_cb_t remote_management_protocol_message_cb = NULL;   /* 初始为空，表示未注册 */
 static remote_management_ota_progress_cb_t   remote_management_ota_progress_cb = NULL;   /* 初始为空，表示未注册 */
 static remote_management_ota_inform_cb_t   remote_management_ota_inform_cb = NULL;   /* 初始为空，表示未注册 */
+
+// ota发送主题
+char remote_management_device_ota_progress_topic[64]="/ota/device/progress/%s";
+char remote_management_device_ota_inform_topic[64]="/ota/device/inform/%s";
 /******************************************************************************
 **API函数实现
 ******************************************************************************/

@@ -73,8 +73,8 @@ char remote_management_device_attribute_topic[64]="/sys/%s/iot/post";
 char remote_management_device_event_topic[64]="/sys/%s/iot/event/post";
 char remote_management_device_protocolmessage_topic[64]="/sys/%s/protocolmessage/post";
 char remote_management_device_log_topic[64]="/sys/%s/log/post";
-char remote_management_device_ota_progress_topic[64]="/ota/device/progress/%s";
-char remote_management_device_ota_inform_topic[64]="/ota/device/inform/%s";
+// char remote_management_device_ota_progress_topic[64]="/ota/device/progress/%s";
+// char remote_management_device_ota_inform_topic[64]="/ota/device/inform/%s";
 char remote_management_device_ota_upgrade_topic[64]="/ota/device/upgrade/%s";
 
 
