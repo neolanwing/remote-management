@@ -41,16 +41,7 @@
 /******************************************************************************
 **宏定义
 ******************************************************************************/
-#define REMENTE_MANAGEMENT_QSIZE 16
-// 下载和解压目录
-#define OTA_DOWNLOAD_DIR        "/opt/update/"
-// 目标程序安装目录
-#define OTA_TARGET_DIR          "/usr/pmf406/"
-#define MAX_PATH_LEN            256
-#define MAX_MD5_LEN             33  // 32 字符 + '\0'
 
-// 用于重启后检查的标志文件
-#define OTA_STATUS_FILE         "upgrade.txt"
 /******************************************************************************
 **枚举定义
 ******************************************************************************/
@@ -97,7 +88,7 @@ static remote_management_protocol_message_qitem_t remote_management_protocol_mes
 static int remote_management_protocol_message_qhead = 0, remote_management_protocol_message_qtail = 0;
 static pthread_mutex_t   remote_management_protocol_message_qmtx = PTHREAD_MUTEX_INITIALIZER;
 
-//ota进度消息
+/*
 typedef struct
 {
   char service_id[32];
@@ -108,7 +99,7 @@ static remote_management_ota_progress_qitem_t remote_management_ota_progress_que
 static int remote_management_ota_progress_qhead = 0, remote_management_ota_progress_qtail = 0;
 static pthread_mutex_t   remote_management_ota_progress_qmtx = PTHREAD_MUTEX_INITIALIZER;
 
-//ota升级结果
+
 typedef struct
 {
   char service_id[32];
@@ -117,16 +108,12 @@ typedef struct
 static remote_management_ota_inform_qitem_t remote_management_ota_inform_queue[REMENTE_MANAGEMENT_QSIZE];
 static int remote_management_ota_inform_qhead = 0, remote_management_ota_inform_qtail = 0;
 static pthread_mutex_t   remote_management_ota_inform_qmtx = PTHREAD_MUTEX_INITIALIZER;
-
+*/
 static remote_management_event_cb_t   remote_management_event_cb = NULL;   /* 初始为空，表示未注册 */
 static remote_management_ulog_cb_t    remote_management_ulog_cb = NULL;   /* 初始为空，表示未注册 */
 static remote_management_protocol_message_cb_t remote_management_protocol_message_cb = NULL;   /* 初始为空，表示未注册 */
-static remote_management_ota_progress_cb_t   remote_management_ota_progress_cb = NULL;   /* 初始为空，表示未注册 */
-static remote_management_ota_inform_cb_t   remote_management_ota_inform_cb = NULL;   /* 初始为空，表示未注册 */
-
-// ota发送主题
-char remote_management_device_ota_progress_topic[64]="/ota/device/progress/%s";
-char remote_management_device_ota_inform_topic[64]="/ota/device/inform/%s";
+//static remote_management_ota_progress_cb_t   remote_management_ota_progress_cb = NULL;   /* 初始为空，表示未注册 */
+//static remote_management_ota_inform_cb_t   remote_management_ota_inform_cb = NULL;   /* 初始为空，表示未注册 */
 /******************************************************************************
 **API函数实现
 ******************************************************************************/
@@ -159,7 +146,7 @@ int remote_management_register_protocol_message_cb(remote_management_protocol_me
     remote_management_protocol_message_cb = cb;
     return 0;
 }
-
+/*
 int remote_management_register_ota_progress_cb(remote_management_ota_progress_cb_t cb)
 {
     if (cb == NULL)
@@ -175,7 +162,7 @@ int remote_management_register_ota_inform_cb(remote_management_ota_inform_cb_t c
     remote_management_ota_inform_cb = cb;
     return 0;
 }
-
+*/
 /*
 void remote_management_fire_event(int service_id, const char *msg)
 {
@@ -335,7 +322,7 @@ void remote_management_fire_protocol_message(u32 service_id,u32 dev_id,SERVICE_P
     }
     pthread_mutex_unlock(&remote_management_protocol_message_qmtx);
 }
-
+#if 0
 void remote_management_fire_ota_progress(const char *service_id, UPDATE_STATUS status, const char *msg)
 {
     /* 1. 构造事件 */
@@ -422,115 +409,21 @@ void remote_management_fire_ota_inform(const char *service_id, const char *msg)
     }
     pthread_mutex_unlock(&remote_management_ota_inform_qmtx);
 }
-void remote_management_ota_progress_handler(const char *service_id, UPDATE_STATUS status, const char *msg)
-{
-    printf("into ota_progress handler,service_id:%s,status:%d\n",service_id,status);
+#endif
 
-    if(remote_management_online_flag==0)
-    	return;
-    if(!msg)
-    	return;
-
-    MQTTClient_message pubmsg = MQTTClient_message_initializer;
-    MQTTClient_deliveryToken token;
-
-    char *ptr;
-    time_t rawtime;
-
-            char topic_tmp[128];
-            sprintf(topic_tmp,remote_management_device_ota_progress_topic,get_terminal_id());
-            printf("remote_management_device_ota_progress_topic:%s\n",topic_tmp);
-            if(topic_tmp != NULL)
-            {
-                    cJSON *json_obj = cJSON_CreateObject();
-                    if(json_obj)
-                    {
-                        cJSON *json_obj_params = cJSON_CreateObject();
-                        if(json_obj_params)
-                        {
-                            char status_string[16];
-                            sprintf(status_string,"%d",status);
-                            cJSON_AddStringToObject(json_obj, "id", service_id);
-                            cJSON_AddItemToObject(json_obj, "params", json_obj_params);
-                            cJSON_AddStringToObject(json_obj_params,"step",status_string);
-                            cJSON_AddStringToObject(json_obj_params,"desc",msg);
-                            ptr = cJSON_Print(json_obj);
-                            if(ptr)
-                            {
-                                pubmsg.payload = (void *)ptr;
-                                pubmsg.payloadlen = strlen(pubmsg.payload);
-                                pubmsg.qos = 0;
-                                pubmsg.retained = 0;
-                                if (MQTTClient_publishMessage(remote_management_client, topic_tmp, &pubmsg, &token) != MQTTCLIENT_SUCCESS)
-                                	remote_management_online_flag=0;
-                                free(ptr);
-                                usleep(10000);
-                            }
-                        }
-                        cJSON_Delete(json_obj);
-                    }
-            }
-}
-
-void remote_management_ota_inform_handler(const char *service_id, const char *msg)
-{
-    printf("into ota_inform handler,service_id:%s,msg:%s\n",service_id,msg);
-
-    if(remote_management_online_flag==0)
-    	return;
-    if(!msg)
-    	return;
-
-    MQTTClient_message pubmsg = MQTTClient_message_initializer;
-    MQTTClient_deliveryToken token;
-
-    char *ptr;
-    time_t rawtime;
-
-            char topic_tmp[128];
-            sprintf(topic_tmp,remote_management_device_ota_inform_topic,get_terminal_id());
-            printf("remote_management_device_ota_inform_topic:%s\n",topic_tmp);
-            if(topic_tmp != NULL)
-            {
-                    cJSON *json_obj = cJSON_CreateObject();
-                    if(json_obj)
-                    {
-                        cJSON *json_obj_params = cJSON_CreateObject();
-                        if(json_obj_params)
-                        {
-                            cJSON_AddStringToObject(json_obj, "id", service_id);
-                            cJSON_AddStringToObject(json_obj, "sn", get_terminal_id());
-                            cJSON_AddItemToObject(json_obj, "params", json_obj_params);
-                            cJSON_AddStringToObject(json_obj_params,"version",msg);
-                            ptr = cJSON_Print(json_obj);
-                            if(ptr)
-                            {
-                                pubmsg.payload = (void *)ptr;
-                                pubmsg.payloadlen = strlen(pubmsg.payload);
-                                pubmsg.qos = 0;
-                                pubmsg.retained = 0;
-                                if (MQTTClient_publishMessage(remote_management_client, topic_tmp, &pubmsg, &token) != MQTTCLIENT_SUCCESS)
-                                	remote_management_online_flag=0;
-                                free(ptr);
-                                usleep(10000);
-                            }
-                        }
-                        cJSON_Delete(json_obj);
-                    }
-            }
-}
 /*
 ** OTA升级相关函数实现
 */
 // MD5 文件计算函数 (OpenSSL 实现)
-int md5_file(const char *filePath, char *md5_out) {
+int md5_file(const char *filePath, char *md5_out)
+{
     unsigned char c[MD5_DIGEST_LENGTH];
     FILE *inFile = NULL;
     MD5_CTX mdContext;
     int bytes;
     unsigned char data[1024];
     int i;
-    
+
     inFile = fopen(filePath, "rb");
     if (inFile == NULL) {
         printf("Error: Cannot open file %s for MD5 calculation.\n", filePath);
@@ -538,70 +431,24 @@ int md5_file(const char *filePath, char *md5_out) {
     }
 
     MD5_Init(&mdContext);
-    
+
     while ((bytes = fread(data, 1, 1024, inFile)) != 0) {
         MD5_Update(&mdContext, data, bytes);
     }
-    
+
     MD5_Final(c, &mdContext);
-    
+
     fclose(inFile);
-    
+
     // 将结果转换为 32 位小写十六进制字符串
     for (i = 0; i < MD5_DIGEST_LENGTH; i++) {
         sprintf(&md5_out[i * 2], "%02x", c[i]);
     }
-    md5_out[MAX_MD5_LEN - 1] = '\0'; 
-    
+    md5_out[MAX_MD5_LEN - 1] = '\0';
+
     return 0;
 }
-// Libcurl 写入回调函数
-// static size_t write_data_callback(void *ptr, size_t size, size_t nmemb, void *stream) {
-//     size_t written = fwrite(ptr, size, nmemb, (FILE *)stream);
-//     return written;
-// }
-// HTTP 文件下载函数 (libcurl 实现)
-// int http_download_file(const char *url, const char *savePath, int overwrite) {
-//     CURL *curl;
-//     CURLcode res;
-//     FILE *fp = NULL;
 
-//     // 1. 确保下载目录存在
-//     if (access(OTA_DOWNLOAD_DIR, F_OK) != 0) {
-//         mkdir(OTA_DOWNLOAD_DIR, 0755);
-//     }
-
-//     // 2. 处理强制覆盖要求：使用 "wb" 模式实现强制覆盖
-//     fp = fopen(savePath, "wb"); 
-    
-//     if (fp == NULL) {
-//         printf("Error: Cannot open file %s for writing.\n", savePath);
-//         return -1;
-//     }
-
-//     curl = curl_easy_init();
-//     if (curl) {
-//         curl_easy_setopt(curl, CURLOPT_URL, url);
-//         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data_callback);
-//         curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
-//         curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L); 
-//         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L); 
-//         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L); 
-        
-//         printf("Downloading from %s to %s (Forced Overwrite)...\n", url, savePath);
-//         res = curl_easy_perform(curl);
-        
-//         if (res != CURLE_OK) {
-//             printf("Error: libcurl download failed: %s\n", curl_easy_strerror(res));
-//         }
-
-//         curl_easy_cleanup(curl);
-//     }
-    
-//     fclose(fp);
-
-//     return (res == CURLE_OK) ? 0 : -1;
-// }
 // HTTP 文件下载函数 (系统命令实现)
 int http_download_file(const char *url, const char *savePath){
     if (!url || !savePath) return -1;
@@ -639,7 +486,7 @@ int http_download_file(const char *url, const char *savePath){
 int unzip_file(const char *zipPath, const char *destDir) {
     char cmd[MAX_PATH_LEN * 2];
     int ret;
-    
+
     // 1. 确保目标解压目录存在
     if (access(destDir, F_OK) != 0) {
         if (mkdir(destDir, 0755) != 0) {
@@ -650,16 +497,16 @@ int unzip_file(const char *zipPath, const char *destDir) {
 
     // 2. 使用 unzip -o 强制覆盖解压到指定目录
     snprintf(cmd, sizeof(cmd), "unzip -o %s -d %s", zipPath, destDir);
-    
+
     printf("Executing unzip command: %s (Forced Overwrite)\n", cmd);
 
     ret = system(cmd);
-    
+
     if (ret != 0) {
         printf("Error: Unzip of %s failed, system returned %d.\n", zipPath, ret);
         return -1;
     }
-    
+
     return 0;
 }
 // 文件大小获取 (POSIX stat 实现)
@@ -680,7 +527,7 @@ long get_file_size(const char *filePath) {
 int write_ota_reboot_status(const char *version, const char *id) {
     char status_path[MAX_PATH_LEN];
     snprintf(status_path, sizeof(status_path), "%s%s", OTA_DOWNLOAD_DIR, OTA_STATUS_FILE);
-    
+
     // "w" 模式会创建或截断文件
     FILE *f = fopen(status_path, "w");
     if (f) {
@@ -701,20 +548,20 @@ ota_reboot_status_t *check_ota_finish_status(void) {
     static ota_reboot_status_t status = {0};
     char status_path[MAX_PATH_LEN];
     snprintf(status_path, sizeof(status_path), "%s%s", OTA_DOWNLOAD_DIR, OTA_STATUS_FILE);
-    
+
     FILE *f = fopen(status_path, "r");
     if (f) {
         if (fgets(status.version, sizeof(status.version), f) != NULL &&
-            fgets(status.id, sizeof(status.id), f) != NULL) 
+            fgets(status.id, sizeof(status.id), f) != NULL)
         {
-            status.version[strcspn(status.version, "\n")] = 0; 
-            status.id[strcspn(status.id, "\n")] = 0; 
+            status.version[strcspn(status.version, "\n")] = 0;
+            status.id[strcspn(status.id, "\n")] = 0;
             fclose(f);
             return &status;
         }
         fclose(f);
     }
-    return NULL; 
+    return NULL;
 }
 
 /**
@@ -723,152 +570,9 @@ ota_reboot_status_t *check_ota_finish_status(void) {
 void clear_ota_finish_status(void) {
     char status_path[MAX_PATH_LEN];
     snprintf(status_path, sizeof(status_path), "%s%s", OTA_DOWNLOAD_DIR, OTA_STATUS_FILE);
-    
+
     if (remove(status_path) != 0) {
         printf("Warning: Failed to delete OTA status file %s.\n", status_path);
     }
 }
-// ----------------------------------------------------------------------
-// 核心逻辑: OTA 升级处理函数
-// ----------------------------------------------------------------------
 
-int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
-{
-    int ret = -1;
-    char zip_filename[MAX_PATH_LEN] = {0};
-    char zip_path[MAX_PATH_LEN] = {0};
-    char extract_dir[MAX_PATH_LEN] = {0};
-    char base_filename[MAX_PATH_LEN] = {0};
-    long downloaded_size;
-    char calculated_md5[MAX_MD5_LEN] = {0};
-
-    const char *target_dir = OTA_TARGET_DIR;
-    const char *download_dir = OTA_DOWNLOAD_DIR;
-
-    printf("Starting OTA upgrade for version: %s\n", cmd->data.version);
-
-    // 1. 确定文件名和解压目录：使用版本号作为基准名
-    snprintf(base_filename, sizeof(base_filename), "ota_%s", cmd->data.version);
-    snprintf(zip_filename, sizeof(zip_filename), "%s.zip", base_filename);
-    snprintf(zip_path, sizeof(zip_path), "%s%s", download_dir, zip_filename);
-    snprintf(extract_dir, sizeof(extract_dir), "%s%s/", download_dir, base_filename);
-
-
-    // ---- 步骤 1. 文件下载 (强制覆盖) ----
-    if (http_download_file(cmd->data.url, zip_path) != 0) {
-        // remote_management_fire_ota_progress(cmd->id, DOWNLOAD_FAILED, "-2下载失败");
-        remote_management_ota_progress_handler(cmd->id, DOWNLOAD_FAILED, "-2下载失败");
-        goto cleanup;
-    }
-
-    // ---- 步骤 2. 大小校验 ----
-    downloaded_size = get_file_size(zip_path);
-    if (downloaded_size == -1 || downloaded_size != cmd->data.size) {
-        // remote_management_fire_ota_progress(cmd->id, VERIFY_FAILED, "-3校验失败: Size mismatch");
-        remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "-3校验失败: Size mismatch");
-        goto cleanup;
-    }
-    
-    // ---- 步骤 3. 签名/MD5 校验 ----
-    if (md5_file(zip_path, calculated_md5) != 0) {
-        // remote_management_fire_ota_progress(cmd->id, VERIFY_FAILED, "-3校验失败: MD5 calculation failed");
-        remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "-3校验失败: MD5 calculation failed");
-        goto cleanup;
-    }
-    
-    // 3.1 md5 字段比对 (不区分大小写)
-    if (strcasecmp(calculated_md5, cmd->data.md5) != 0) {
-        // remote_management_fire_ota_progress(cmd->id, VERIFY_FAILED, "-3校验失败: MD5 field mismatch");
-        remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "-3校验失败: MD5 field mismatch");
-        goto cleanup;
-    }
-
-    // 3.2 Sign 字段比对 (不区分大小写)
-    if (strcasecmp(calculated_md5, cmd->data.sign) != 0) {
-        // remote_management_fire_ota_progress(cmd->id, VERIFY_FAILED, "-3校验失败: Sign field mismatch");
-        remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "-3校验失败: Sign field mismatch");
-        goto cleanup;
-    }
-    
-    printf("File integrity verification passed. MD5: %s\n", calculated_md5);
-
-    // ---- 步骤 4. 文件解压 (强制覆盖到同名目录) ----
-    if (unzip_file(zip_path, extract_dir) != 0) {
-        // remote_management_fire_ota_progress(cmd->id, FLASH_FAILED, "-4烧写失败: Unzip failed");
-        remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "-4烧写失败: Unzip failed"); 
-        goto cleanup;
-    }
-
-    // ---- 步骤 5 & 6. 文件清理、复制与权限设置 ----
-    DIR *dir;
-    struct dirent *entry;
-    
-    dir = opendir(extract_dir);
-    if (dir == NULL) {
-        // remote_management_fire_ota_progress(cmd->id, FLASH_FAILED, "-4烧写失败: Cannot open extracted directory");
-        remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "-4烧写失败: Cannot open extracted directory");
-        goto cleanup;
-    }
-
-    while ((entry = readdir(dir)) != NULL) {
-        // 跳过目录和特殊项
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0 || entry->d_type == DT_DIR) {
-            continue; 
-        }
-
-        char old_target_path[MAX_PATH_LEN];
-        char new_source_path[MAX_PATH_LEN];
-        char copy_cmd[MAX_PATH_LEN * 2];
-        
-        // 5.2 删除 /usr/pmf406/ 目录下同名旧文件
-        snprintf(old_target_path, sizeof(old_target_path), "%s%s", target_dir, entry->d_name);
-        if (access(old_target_path, F_OK) == 0) {
-            printf("Deleting old file: %s\n", old_target_path);
-            remove(old_target_path); // 允许删除失败，但最好记录
-        }
-        
-        // 5.3 复制新文件到 /usr/pmf406/ (强制覆盖)
-        snprintf(new_source_path, sizeof(new_source_path), "%s%s", extract_dir, entry->d_name);
-        
-        // 使用 cp -f 强制覆盖复制
-        snprintf(copy_cmd, sizeof(copy_cmd), "cp -f %s %s", new_source_path, target_dir);
-        if (system(copy_cmd) != 0) {
-            closedir(dir);
-            // remote_management_fire_ota_progress(cmd->id, FLASH_FAILED, "-4烧写失败: File copy failed");
-            remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "-4烧写失败: File copy failed");
-            goto cleanup;
-        }
-
-        // 步骤 6. 权限设置 (设置为可执行 rwxrwxrwx)
-        char final_target_path[MAX_PATH_LEN];
-        snprintf(final_target_path, sizeof(final_target_path), "%s%s", target_dir, entry->d_name);
-        if (chmod(final_target_path, S_IRWXU | S_IRWXG | S_IRWXO) != 0) {
-            printf("Warning: Failed to set executable permission for %s\n", final_target_path);
-        }
-    }
-    closedir(dir);
-    
-    // 在重启前，写入版本和ID到 upgrade.txt
-    if (write_ota_reboot_status(cmd->data.version, cmd->id) != 0) {
-        printf("Warning: Failed to write upgrade.txt status file.\n");
-    }
-
-    ret = 0;
-
-    // ---- 步骤 7. 系统重启 ----
-    printf("OTA files deployed successfully. Executing system reboot...\n");
-    system("reboot"); 
-
-cleanup:
-    // 清理临时文件和目录
-    char cleanup_cmd[MAX_PATH_LEN * 2];
-    
-    // 清理解压目录
-    snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf %s", extract_dir);
-    system(cleanup_cmd); 
-    
-    // 清理下载的ZIP文件
-    remove(zip_path); 
-
-    return ret; 
-}

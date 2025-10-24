@@ -47,9 +47,6 @@
 #include <libgen.h>
 #include <fcntl.h>
 
-// 引入第三方库头文件
-#include <openssl/md5.h>  // MD5 计算
-// #include <curl/curl.h>    // HTTP/HTTPS 下载
 
 /******************************************************************************
 **底层驱动平台头文件
@@ -64,7 +61,6 @@
 **应用头文件
 ******************************************************************************/
 #include "remote_management_service_private.h"
-#include "../inc/remote_management_service.h"
 
 
 #ifdef __cplusplus
