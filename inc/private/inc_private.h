@@ -49,7 +49,7 @@
 
 // 引入第三方库头文件
 #include <openssl/md5.h>  // MD5 计算
-#include <curl/curl.h>    // HTTP/HTTPS 下载
+// #include <curl/curl.h>    // HTTP/HTTPS 下载
 
 /******************************************************************************
 **底层驱动平台头文件

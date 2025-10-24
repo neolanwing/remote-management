@@ -418,7 +418,103 @@ void remote_management_fire_ota_inform(const char *service_id, const char *msg)
     }
     pthread_mutex_unlock(&remote_management_ota_inform_qmtx);
 }
+void remote_management_ota_progress_handler(const char *service_id, UPDATE_STATUS status, const char *msg)
+{
+    printf("into ota_progress handler,service_id:%s,status:%d\n",service_id,status);
 
+    if(remote_management_online_flag==0)
+    	return;
+    if(!msg)
+    	return;
+
+    MQTTClient_message pubmsg = MQTTClient_message_initializer;
+    MQTTClient_deliveryToken token;
+
+    char *ptr;
+    time_t rawtime;
+
+            char topic_tmp[128];
+            sprintf(topic_tmp,remote_management_device_ota_progress_topic,get_terminal_id());
+            printf("remote_management_device_ota_progress_topic:%s\n",topic_tmp);
+            if(topic_tmp != NULL)
+            {
+                    cJSON *json_obj = cJSON_CreateObject();
+                    if(json_obj)
+                    {
+                        cJSON *json_obj_params = cJSON_CreateObject();
+                        if(json_obj_params)
+                        {
+                            char status_string[16];
+                            sprintf(status_string,"%d",status);
+                            cJSON_AddStringToObject(json_obj, "id", service_id);
+                            cJSON_AddItemToObject(json_obj, "params", json_obj_params);
+                            cJSON_AddStringToObject(json_obj_params,"step",status_string);
+                            cJSON_AddStringToObject(json_obj_params,"desc",msg);
+                            ptr = cJSON_Print(json_obj);
+                            if(ptr)
+                            {
+                                pubmsg.payload = (void *)ptr;
+                                pubmsg.payloadlen = strlen(pubmsg.payload);
+                                pubmsg.qos = 0;
+                                pubmsg.retained = 0;
+                                if (MQTTClient_publishMessage(remote_management_client, topic_tmp, &pubmsg, &token) != MQTTCLIENT_SUCCESS)
+                                	remote_management_online_flag=0;
+                                free(ptr);
+                                usleep(10000);
+                            }
+                        }
+                        cJSON_Delete(json_obj);
+                    }
+            }
+}
+
+void remote_management_ota_inform_handler(const char *service_id, const char *msg)
+{
+    printf("into ota_inform handler,service_id:%s,msg:%s\n",service_id,msg);
+
+    if(remote_management_online_flag==0)
+    	return;
+    if(!msg)
+    	return;
+
+    MQTTClient_message pubmsg = MQTTClient_message_initializer;
+    MQTTClient_deliveryToken token;
+
+    char *ptr;
+    time_t rawtime;
+
+            char topic_tmp[128];
+            sprintf(topic_tmp,remote_management_device_ota_inform_topic,get_terminal_id());
+            printf("remote_management_device_ota_inform_topic:%s\n",topic_tmp);
+            if(topic_tmp != NULL)
+            {
+                    cJSON *json_obj = cJSON_CreateObject();
+                    if(json_obj)
+                    {
+                        cJSON *json_obj_params = cJSON_CreateObject();
+                        if(json_obj_params)
+                        {
+                            cJSON_AddStringToObject(json_obj, "id", service_id);
+                            cJSON_AddStringToObject(json_obj, "sn", get_terminal_id());
+                            cJSON_AddItemToObject(json_obj, "params", json_obj_params);
+                            cJSON_AddStringToObject(json_obj_params,"version",msg);
+                            ptr = cJSON_Print(json_obj);
+                            if(ptr)
+                            {
+                                pubmsg.payload = (void *)ptr;
+                                pubmsg.payloadlen = strlen(pubmsg.payload);
+                                pubmsg.qos = 0;
+                                pubmsg.retained = 0;
+                                if (MQTTClient_publishMessage(remote_management_client, topic_tmp, &pubmsg, &token) != MQTTCLIENT_SUCCESS)
+                                	remote_management_online_flag=0;
+                                free(ptr);
+                                usleep(10000);
+                            }
+                        }
+                        cJSON_Delete(json_obj);
+                    }
+            }
+}
 /*
 ** OTA升级相关函数实现
 */
@@ -456,51 +552,84 @@ int md5_file(const char *filePath, char *md5_out) {
     return 0;
 }
 // Libcurl 写入回调函数
-static size_t write_data_callback(void *ptr, size_t size, size_t nmemb, void *stream) {
-    size_t written = fwrite(ptr, size, nmemb, (FILE *)stream);
-    return written;
-}
+// static size_t write_data_callback(void *ptr, size_t size, size_t nmemb, void *stream) {
+//     size_t written = fwrite(ptr, size, nmemb, (FILE *)stream);
+//     return written;
+// }
 // HTTP 文件下载函数 (libcurl 实现)
-int http_download_file(const char *url, const char *savePath, int overwrite) {
-    CURL *curl;
-    CURLcode res;
-    FILE *fp = NULL;
+// int http_download_file(const char *url, const char *savePath, int overwrite) {
+//     CURL *curl;
+//     CURLcode res;
+//     FILE *fp = NULL;
 
-    // 1. 确保下载目录存在
+//     // 1. 确保下载目录存在
+//     if (access(OTA_DOWNLOAD_DIR, F_OK) != 0) {
+//         mkdir(OTA_DOWNLOAD_DIR, 0755);
+//     }
+
+//     // 2. 处理强制覆盖要求：使用 "wb" 模式实现强制覆盖
+//     fp = fopen(savePath, "wb"); 
+    
+//     if (fp == NULL) {
+//         printf("Error: Cannot open file %s for writing.\n", savePath);
+//         return -1;
+//     }
+
+//     curl = curl_easy_init();
+//     if (curl) {
+//         curl_easy_setopt(curl, CURLOPT_URL, url);
+//         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data_callback);
+//         curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+//         curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L); 
+//         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L); 
+//         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L); 
+        
+//         printf("Downloading from %s to %s (Forced Overwrite)...\n", url, savePath);
+//         res = curl_easy_perform(curl);
+        
+//         if (res != CURLE_OK) {
+//             printf("Error: libcurl download failed: %s\n", curl_easy_strerror(res));
+//         }
+
+//         curl_easy_cleanup(curl);
+//     }
+    
+//     fclose(fp);
+
+//     return (res == CURLE_OK) ? 0 : -1;
+// }
+// HTTP 文件下载函数 (系统命令实现)
+int http_download_file(const char *url, const char *savePath){
+    if (!url || !savePath) return -1;
+
+    // 确保下载目录存在
     if (access(OTA_DOWNLOAD_DIR, F_OK) != 0) {
         mkdir(OTA_DOWNLOAD_DIR, 0755);
     }
 
-    // 2. 处理强制覆盖要求：使用 "wb" 模式实现强制覆盖
-    fp = fopen(savePath, "wb"); 
-    
-    if (fp == NULL) {
-        printf("Error: Cannot open file %s for writing.\n", savePath);
+    // 检查 curl 命令是否存在
+    if (access("/usr/bin/curl", X_OK) != 0 && access("/bin/curl", X_OK) != 0) {
+        printf("Error: curl command not found.\n");
         return -1;
     }
 
-    curl = curl_easy_init();
-    if (curl) {
-        curl_easy_setopt(curl, CURLOPT_URL, url);
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data_callback);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
-        curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L); 
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L); 
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L); 
-        
-        printf("Downloading from %s to %s (Forced Overwrite)...\n", url, savePath);
-        res = curl_easy_perform(curl);
-        
-        if (res != CURLE_OK) {
-            printf("Error: libcurl download failed: %s\n", curl_easy_strerror(res));
-        }
+    // 删除旧文件，防止残留
+    unlink(savePath);
 
-        curl_easy_cleanup(curl);
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd),
+             "curl --fail --silent --show-error -L \"%s\" -o \"%s\"", url, savePath);
+
+    printf("Downloading via system: %s\n", cmd);
+    int ret = system(cmd);
+
+    if (ret == 0) {
+        printf("Download success: %s\n", savePath);
+        return 0;
+    } else {
+        printf("Download failed (code=%d)\n", ret);
+        return -1;
     }
-    
-    fclose(fp);
-
-    return (res == CURLE_OK) ? 0 : -1;
 }
 // ZIP 解压函数 (使用 system/unzip 实现强制覆盖到指定目录)
 int unzip_file(const char *zipPath, const char *destDir) {
@@ -622,33 +751,38 @@ int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
 
 
     // ---- 步骤 1. 文件下载 (强制覆盖) ----
-    if (http_download_file(cmd->data.url, zip_path, 1) != 0) {
-        remote_management_fire_ota_progress(cmd->id, DOWNLOAD_FAILED, "-2下载失败");
+    if (http_download_file(cmd->data.url, zip_path) != 0) {
+        // remote_management_fire_ota_progress(cmd->id, DOWNLOAD_FAILED, "-2下载失败");
+        remote_management_ota_progress_handler(cmd->id, DOWNLOAD_FAILED, "-2下载失败");
         goto cleanup;
     }
 
     // ---- 步骤 2. 大小校验 ----
     downloaded_size = get_file_size(zip_path);
     if (downloaded_size == -1 || downloaded_size != cmd->data.size) {
-        remote_management_fire_ota_progress(cmd->id, VERIFY_FAILED, "-3校验失败: Size mismatch");
+        // remote_management_fire_ota_progress(cmd->id, VERIFY_FAILED, "-3校验失败: Size mismatch");
+        remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "-3校验失败: Size mismatch");
         goto cleanup;
     }
     
     // ---- 步骤 3. 签名/MD5 校验 ----
     if (md5_file(zip_path, calculated_md5) != 0) {
-        remote_management_fire_ota_progress(cmd->id, VERIFY_FAILED, "-3校验失败: MD5 calculation failed");
+        // remote_management_fire_ota_progress(cmd->id, VERIFY_FAILED, "-3校验失败: MD5 calculation failed");
+        remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "-3校验失败: MD5 calculation failed");
         goto cleanup;
     }
     
     // 3.1 md5 字段比对 (不区分大小写)
     if (strcasecmp(calculated_md5, cmd->data.md5) != 0) {
-        remote_management_fire_ota_progress(cmd->id, VERIFY_FAILED, "-3校验失败: MD5 field mismatch");
+        // remote_management_fire_ota_progress(cmd->id, VERIFY_FAILED, "-3校验失败: MD5 field mismatch");
+        remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "-3校验失败: MD5 field mismatch");
         goto cleanup;
     }
 
     // 3.2 Sign 字段比对 (不区分大小写)
     if (strcasecmp(calculated_md5, cmd->data.sign) != 0) {
-        remote_management_fire_ota_progress(cmd->id, VERIFY_FAILED, "-3校验失败: Sign field mismatch");
+        // remote_management_fire_ota_progress(cmd->id, VERIFY_FAILED, "-3校验失败: Sign field mismatch");
+        remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "-3校验失败: Sign field mismatch");
         goto cleanup;
     }
     
@@ -656,7 +790,8 @@ int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
 
     // ---- 步骤 4. 文件解压 (强制覆盖到同名目录) ----
     if (unzip_file(zip_path, extract_dir) != 0) {
-        remote_management_fire_ota_progress(cmd->id, FLASH_FAILED, "-4烧写失败: Unzip failed"); 
+        // remote_management_fire_ota_progress(cmd->id, FLASH_FAILED, "-4烧写失败: Unzip failed");
+        remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "-4烧写失败: Unzip failed"); 
         goto cleanup;
     }
 
@@ -666,7 +801,8 @@ int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
     
     dir = opendir(extract_dir);
     if (dir == NULL) {
-        remote_management_fire_ota_progress(cmd->id, FLASH_FAILED, "-4烧写失败: Cannot open extracted directory");
+        // remote_management_fire_ota_progress(cmd->id, FLASH_FAILED, "-4烧写失败: Cannot open extracted directory");
+        remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "-4烧写失败: Cannot open extracted directory");
         goto cleanup;
     }
 
@@ -694,7 +830,8 @@ int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
         snprintf(copy_cmd, sizeof(copy_cmd), "cp -f %s %s", new_source_path, target_dir);
         if (system(copy_cmd) != 0) {
             closedir(dir);
-            remote_management_fire_ota_progress(cmd->id, FLASH_FAILED, "-4烧写失败: File copy failed");
+            // remote_management_fire_ota_progress(cmd->id, FLASH_FAILED, "-4烧写失败: File copy failed");
+            remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "-4烧写失败: File copy failed");
             goto cleanup;
         }
 

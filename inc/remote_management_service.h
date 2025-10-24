@@ -107,6 +107,8 @@ REMOTE_MANAGEMENT_SEVICE_EXT void remote_management_fire_ulog(REMOTE_MANAGEMENT_
 REMOTE_MANAGEMENT_SEVICE_EXT void remote_management_fire_protocol_message(u32 service_id,u32 dev_id,SERVICE_PROTOCOL_TYPE protocol_type, const char *msg,u16 len);
 REMOTE_MANAGEMENT_SEVICE_EXT void remote_management_fire_ota_progress(const char *service_id, UPDATE_STATUS status, const char *msg);
 REMOTE_MANAGEMENT_SEVICE_EXT void remote_management_fire_ota_inform(const char *service_id, const char *msg);
+REMOTE_MANAGEMENT_SEVICE_EXT void remote_management_ota_progress_handler(const char *service_id, UPDATE_STATUS status, const char *msg)
+REMOTE_MANAGEMENT_SEVICE_EXT void remote_management_ota_inform_handler(const char *service_id, const char *msg)
 
 /**
  * OTA升级相关函数声明
@@ -116,7 +118,9 @@ REMOTE_MANAGEMENT_SEVICE_EXT void remote_management_fire_ota_inform(const char *
 REMOTE_MANAGEMENT_SEVICE_EXT int md5_file(const char *filePath, char *md5_out);
 
 // 文件下载函数 (libcurl 实现)
-REMOTE_MANAGEMENT_SEVICE_EXT int http_download_file(const char *url, const char *savePath, int overwrite);
+// REMOTE_MANAGEMENT_SEVICE_EXT int http_download_file(const char *url, const char *savePath, int overwrite);
+// 文件下载函数 (命令 实现)
+REMOTE_MANAGEMENT_SEVICE_EXT int http_download_file(const char *url, const char *savePath);
 
 // ZIP 解压函数 (system/unzip 实现)
 REMOTE_MANAGEMENT_SEVICE_EXT int unzip_file(const char *zipPath, const char *destDir);

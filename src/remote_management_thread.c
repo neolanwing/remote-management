@@ -453,103 +453,103 @@ void remote_management_protocol_message_handler(u32 service_id,u32 dev_id,SERVIC
             }
 }
 
-void remote_management_ota_progress_handler(const char *service_id, UPDATE_STATUS status, const char *msg)
-{
-    printf("into ota_progress handler,service_id:%s,status:%d\n",service_id,status);
+// void remote_management_ota_progress_handler(const char *service_id, UPDATE_STATUS status, const char *msg)
+// {
+//     printf("into ota_progress handler,service_id:%s,status:%d\n",service_id,status);
 
-    if(remote_management_online_flag==0)
-    	return;
-    if(!msg)
-    	return;
+//     if(remote_management_online_flag==0)
+//     	return;
+//     if(!msg)
+//     	return;
 
-    MQTTClient_message pubmsg = MQTTClient_message_initializer;
-    MQTTClient_deliveryToken token;
+//     MQTTClient_message pubmsg = MQTTClient_message_initializer;
+//     MQTTClient_deliveryToken token;
 
-    char *ptr;
-    time_t rawtime;
+//     char *ptr;
+//     time_t rawtime;
 
-            char topic_tmp[128];
-            sprintf(topic_tmp,remote_management_device_ota_progress_topic,get_terminal_id());
-            printf("remote_management_device_ota_progress_topic:%s\n",topic_tmp);
-            if(topic_tmp != NULL)
-            {
-                    cJSON *json_obj = cJSON_CreateObject();
-                    if(json_obj)
-                    {
-                        cJSON *json_obj_params = cJSON_CreateObject();
-                        if(json_obj_params)
-                        {
-                            char status_string[16];
-                            sprintf(status_string,"%d",status);
-                            cJSON_AddStringToObject(json_obj, "id", service_id);
-                            cJSON_AddItemToObject(json_obj, "params", json_obj_params);
-                            cJSON_AddStringToObject(json_obj_params,"step",status_string);
-                            cJSON_AddStringToObject(json_obj_params,"desc",msg);
-                            ptr = cJSON_Print(json_obj);
-                            if(ptr)
-                            {
-                                pubmsg.payload = (void *)ptr;
-                                pubmsg.payloadlen = strlen(pubmsg.payload);
-                                pubmsg.qos = 0;
-                                pubmsg.retained = 0;
-                                if (MQTTClient_publishMessage(remote_management_client, topic_tmp, &pubmsg, &token) != MQTTCLIENT_SUCCESS)
-                                	remote_management_online_flag=0;
-                                free(ptr);
-                                usleep(10000);
-                            }
-                        }
-                        cJSON_Delete(json_obj);
-                    }
-            }
-}
+//             char topic_tmp[128];
+//             sprintf(topic_tmp,remote_management_device_ota_progress_topic,get_terminal_id());
+//             printf("remote_management_device_ota_progress_topic:%s\n",topic_tmp);
+//             if(topic_tmp != NULL)
+//             {
+//                     cJSON *json_obj = cJSON_CreateObject();
+//                     if(json_obj)
+//                     {
+//                         cJSON *json_obj_params = cJSON_CreateObject();
+//                         if(json_obj_params)
+//                         {
+//                             char status_string[16];
+//                             sprintf(status_string,"%d",status);
+//                             cJSON_AddStringToObject(json_obj, "id", service_id);
+//                             cJSON_AddItemToObject(json_obj, "params", json_obj_params);
+//                             cJSON_AddStringToObject(json_obj_params,"step",status_string);
+//                             cJSON_AddStringToObject(json_obj_params,"desc",msg);
+//                             ptr = cJSON_Print(json_obj);
+//                             if(ptr)
+//                             {
+//                                 pubmsg.payload = (void *)ptr;
+//                                 pubmsg.payloadlen = strlen(pubmsg.payload);
+//                                 pubmsg.qos = 0;
+//                                 pubmsg.retained = 0;
+//                                 if (MQTTClient_publishMessage(remote_management_client, topic_tmp, &pubmsg, &token) != MQTTCLIENT_SUCCESS)
+//                                 	remote_management_online_flag=0;
+//                                 free(ptr);
+//                                 usleep(10000);
+//                             }
+//                         }
+//                         cJSON_Delete(json_obj);
+//                     }
+//             }
+// }
 
-void remote_management_ota_inform_handler(const char *service_id, const char *msg)
-{
-    printf("into ota_inform handler,service_id:%s,msg:%s\n",service_id,msg);
+// void remote_management_ota_inform_handler(const char *service_id, const char *msg)
+// {
+//     printf("into ota_inform handler,service_id:%s,msg:%s\n",service_id,msg);
 
-    if(remote_management_online_flag==0)
-    	return;
-    if(!msg)
-    	return;
+//     if(remote_management_online_flag==0)
+//     	return;
+//     if(!msg)
+//     	return;
 
-    MQTTClient_message pubmsg = MQTTClient_message_initializer;
-    MQTTClient_deliveryToken token;
+//     MQTTClient_message pubmsg = MQTTClient_message_initializer;
+//     MQTTClient_deliveryToken token;
 
-    char *ptr;
-    time_t rawtime;
+//     char *ptr;
+//     time_t rawtime;
 
-            char topic_tmp[128];
-            sprintf(topic_tmp,remote_management_device_ota_inform_topic,get_terminal_id());
-            printf("remote_management_device_ota_inform_topic:%s\n",topic_tmp);
-            if(topic_tmp != NULL)
-            {
-                    cJSON *json_obj = cJSON_CreateObject();
-                    if(json_obj)
-                    {
-                        cJSON *json_obj_params = cJSON_CreateObject();
-                        if(json_obj_params)
-                        {
-                            cJSON_AddStringToObject(json_obj, "id", service_id);
-                            cJSON_AddStringToObject(json_obj, "sn", get_terminal_id());
-                            cJSON_AddItemToObject(json_obj, "params", json_obj_params);
-                            cJSON_AddStringToObject(json_obj_params,"version",msg);
-                            ptr = cJSON_Print(json_obj);
-                            if(ptr)
-                            {
-                                pubmsg.payload = (void *)ptr;
-                                pubmsg.payloadlen = strlen(pubmsg.payload);
-                                pubmsg.qos = 0;
-                                pubmsg.retained = 0;
-                                if (MQTTClient_publishMessage(remote_management_client, topic_tmp, &pubmsg, &token) != MQTTCLIENT_SUCCESS)
-                                	remote_management_online_flag=0;
-                                free(ptr);
-                                usleep(10000);
-                            }
-                        }
-                        cJSON_Delete(json_obj);
-                    }
-            }
-}
+//             char topic_tmp[128];
+//             sprintf(topic_tmp,remote_management_device_ota_inform_topic,get_terminal_id());
+//             printf("remote_management_device_ota_inform_topic:%s\n",topic_tmp);
+//             if(topic_tmp != NULL)
+//             {
+//                     cJSON *json_obj = cJSON_CreateObject();
+//                     if(json_obj)
+//                     {
+//                         cJSON *json_obj_params = cJSON_CreateObject();
+//                         if(json_obj_params)
+//                         {
+//                             cJSON_AddStringToObject(json_obj, "id", service_id);
+//                             cJSON_AddStringToObject(json_obj, "sn", get_terminal_id());
+//                             cJSON_AddItemToObject(json_obj, "params", json_obj_params);
+//                             cJSON_AddStringToObject(json_obj_params,"version",msg);
+//                             ptr = cJSON_Print(json_obj);
+//                             if(ptr)
+//                             {
+//                                 pubmsg.payload = (void *)ptr;
+//                                 pubmsg.payloadlen = strlen(pubmsg.payload);
+//                                 pubmsg.qos = 0;
+//                                 pubmsg.retained = 0;
+//                                 if (MQTTClient_publishMessage(remote_management_client, topic_tmp, &pubmsg, &token) != MQTTCLIENT_SUCCESS)
+//                                 	remote_management_online_flag=0;
+//                                 free(ptr);
+//                                 usleep(10000);
+//                             }
+//                         }
+//                         cJSON_Delete(json_obj);
+//                     }
+//             }
+// }
 
 static void device_attribute_cyc_msg_pub()
 {
@@ -728,7 +728,8 @@ static int msgarrvd(void *context, char *topicName, int topicLen, MQTTClient_mes
                 ota_upgrade_handler(&cmd);
             } else {
                  // 参数不全，报升级失败
-                remote_management_fire_ota_progress(cmd.id, UPDATE_FAILED, "-1升级失败: Missing parameters in command");
+                // remote_management_fire_ota_progress(cmd.id, UPDATE_FAILED, "-1升级失败: Missing parameters in command");
+                remote_management_ota_progress_handler(cmd.id, UPDATE_FAILED, "-1升级失败: Missing parameters in command");
             }
         }
 
@@ -795,10 +796,10 @@ void *remote_management_thread_entry(void *parameter)
     }
 
     // 【全局初始化】: 在线程开始时进行 libcurl 全局初始化
-    CURLcode init_res = curl_global_init(CURL_GLOBAL_DEFAULT);
-    if (init_res != CURLE_OK) {
-        printf("Fatal Error: libcurl global init failed: %s\n", curl_easy_strerror(init_res));
-    }
+    // CURLcode init_res = curl_global_init(CURL_GLOBAL_DEFAULT);
+    // if (init_res != CURLE_OK) {
+    //     printf("Fatal Error: libcurl global init failed: %s\n", curl_easy_strerror(init_res));
+    // }
 
     char *sn = get_terminal_id();
     char ota_topic[128];
@@ -810,7 +811,8 @@ void *remote_management_thread_entry(void *parameter)
     if (status != NULL)
     {
         // 升级成功，调用 ota_inform 上报成功消息
-        remote_management_fire_ota_inform(status->id, status->version); // msg为下发的version字段值
+        // remote_management_fire_ota_inform(status->id, status->version); 
+        remote_management_ota_inform_handler(status->id, status->version);
         printf("OTA upgrade success reported for version: %s (ID: %s)\n", status->version, status->id);
         
         // 清除标志文件
@@ -819,8 +821,8 @@ void *remote_management_thread_entry(void *parameter)
     remote_management_register_event_cb(remote_management_event_handler);
     remote_management_register_ulog_cb(remote_management_ulog_handler);
     remote_management_register_protocol_message_cb(remote_management_protocol_message_handler);
-    remote_management_register_ota_progress_cb(remote_management_ota_progress_handler);
-    remote_management_register_ota_inform_cb(remote_management_ota_inform_handler);
+    // remote_management_register_ota_progress_cb(remote_management_ota_progress_handler);
+    // remote_management_register_ota_inform_cb(remote_management_ota_inform_handler);
     while (1)
     {
         if (mqtt_connect(&remote_management_client) == MQTTCLIENT_SUCCESS)
@@ -846,7 +848,7 @@ void *remote_management_thread_entry(void *parameter)
 
     MQTTClient_destroy(&remote_management_client);
     // 当程序/线程即将终止时调用，释放所有 libcurl 内部资源
-    curl_global_cleanup();
+    // curl_global_cleanup();
     return NULL;
 }
 
