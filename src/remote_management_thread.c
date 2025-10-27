@@ -41,7 +41,7 @@
 **宏定义
 ******************************************************************************/
 //#define ADDRESS   "mqtt.xjpmf.cloud:1883"
-#define ADDRESS   "10.30.103.27:1883"
+#define ADDRESS   "39.105.53.134:1883"
 #define CLIENTID  "syncReThread"
 #define TOPIC     "demo/status"
 #define QOS       1
@@ -288,40 +288,39 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
 
     // ---- 步骤 1. 文件下载 (强制覆盖) ----
     if (http_download_file(cmd->data.url, zip_path) != 0) {
-        remote_management_ota_progress_handler(cmd->id, DOWNLOAD_FAILED, "-2下载失败");
+        remote_management_ota_progress_handler(cmd->id, DOWNLOAD_FAILED, "下载失败");
         goto cleanup;
     }
 
     // ---- 步骤 2. 大小校验 ----
     downloaded_size = get_file_size(zip_path);
     if (downloaded_size == -1 || downloaded_size != cmd->data.size) {
-        remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "-3校验失败: Size mismatch");
+        remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "大小校验失败");
         goto cleanup;
     }
 
     // ---- 步骤 3. 签名/MD5 校验 ----
     if (md5_file(zip_path, calculated_md5) != 0) {
-        remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "-3校验失败: MD5 calculation failed");
+        remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "MD5签名校验失败");
         goto cleanup;
     }
 
     // 3.1 md5 字段比对 (不区分大小写)
     if (strcasecmp(calculated_md5, cmd->data.md5) != 0) {
-        remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "-3校验失败: MD5 field mismatch");
+        remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "MD5字段校验失败");
         goto cleanup;
     }
 
     // 3.2 Sign 字段比对 (不区分大小写)
     if (strcasecmp(calculated_md5, cmd->data.sign) != 0) {
-        remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "-3校验失败: Sign field mismatch");
+        remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "SIGN字段校验失败");
         goto cleanup;
     }
 
-    printf("File integrity verification passed. MD5: %s\n", calculated_md5);
 
     // ---- 步骤 4. 文件解压 (强制覆盖到同名目录) ----
     if (unzip_file(zip_path, extract_dir) != 0) {
-        remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "-4烧写失败: Unzip failed");
+        remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "解压失败");
         goto cleanup;
     }
 
@@ -331,7 +330,48 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
 
     dir = opendir(extract_dir);
     if (dir == NULL) {
-        remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "-4烧写失败: Cannot open extracted directory");
+        remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "进入解压文件失败");
+        goto cleanup;
+    }
+
+    // 检测是否只有一个顶层子目录
+    int dir_count = 0;
+    char single_dir_name[MAX_PATH_LEN] = {0};
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+            continue;
+
+        char full_path[MAX_PATH_LEN];
+        snprintf(full_path, sizeof(full_path), "%s%s", extract_dir, entry->d_name);
+
+        struct stat st;
+        if (stat(full_path, &st) != 0)
+            continue;
+
+        if (S_ISDIR(st.st_mode)) {
+            dir_count++;
+            strncpy(single_dir_name, full_path, sizeof(single_dir_name) - 1);
+        }
+    }
+    closedir(dir);
+
+    // 如果只有一个目录，把 extract_dir 更新为子目录
+    if (dir_count == 1) {
+    printf("Detected single nested dir: %s\n", single_dir_name);
+
+    // 保证末尾有 '/'
+    size_t l = strlen(single_dir_name);
+    if (l > 0 && single_dir_name[l-1] != '/')
+        single_dir_name[l] = '/', single_dir_name[l+1] = '\0';
+
+    strncpy(extract_dir, single_dir_name, MAX_PATH_LEN - 1);
+    }
+
+    // ---- 遍历文件，执行删除/复制/权限设置 ----
+    dir = opendir(extract_dir);
+    if (dir == NULL) {
+        remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "进入解压文件失败");
         goto cleanup;
     }
 
@@ -359,7 +399,7 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
         snprintf(copy_cmd, sizeof(copy_cmd), "cp -f %s %s", new_source_path, target_dir);
         if (system(copy_cmd) != 0) {
             closedir(dir);
-            remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "-4烧写失败: File copy failed");
+            remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "烧写失败");
             goto cleanup;
         }
 
@@ -805,8 +845,8 @@ static int mqtt_connect(MQTTClient *client)
     conn_opts.cleansession = 1;
     conn_opts.MQTTVersion = MQTTVERSION_3_1_1;
     conn_opts.connectTimeout = 60;
-    conn_opts.username="xczn";
-    conn_opts.password="xczn";
+    conn_opts.username="406ota";
+    conn_opts.password="406ota";
 
     int rc = MQTTClient_connect(*client, &conn_opts);
     if (rc == MQTTCLIENT_SUCCESS)
@@ -940,17 +980,6 @@ void *remote_management_thread_entry(void *parameter)
     snprintf(ota_topic, sizeof(ota_topic), remote_management_device_ota_upgrade_topic, sn);
 
 
-    // ---- 步骤 8. 启动后状态判断与上报 (检查 upgrade.txt) ----
-    ota_reboot_status_t *status = check_ota_finish_status();
-    if (status != NULL)
-    {
-        // 升级成功，调用 ota_inform 上报成功消息
-        remote_management_ota_inform_handler(status->id, status->version);
-        printf("OTA upgrade success reported for version: %s (ID: %s)\n", status->version, status->id);
-
-        // 清除标志文件
-        clear_ota_finish_status();
-    }
     remote_management_register_event_cb(remote_management_event_handler);
     remote_management_register_ulog_cb(remote_management_ulog_handler);
     remote_management_register_protocol_message_cb(remote_management_protocol_message_handler);
@@ -959,6 +988,18 @@ void *remote_management_thread_entry(void *parameter)
         if (mqtt_connect(&remote_management_client) == MQTTCLIENT_SUCCESS)
         {
             printf("remote management connect success\n");
+
+            // ---- 步骤 8. mqtt连接完成后状态判断与上报 (检查 upgrade.txt) ----
+            ota_reboot_status_t *status = check_ota_finish_status();
+            if (status != NULL)
+            {
+                // 升级成功，调用 ota_inform 上报成功消息
+                remote_management_ota_inform_handler(status->id, status->version);
+                printf("OTA upgrade success reported for version: %s (ID: %s)\n", status->version, status->id);
+
+                // 清除标志文件
+                clear_ota_finish_status();
+            }
 
             MQTTClient_subscribe(remote_management_client, TOPIC, QOS);
             // 订阅 OTA 升级主题
