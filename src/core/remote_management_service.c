@@ -487,12 +487,20 @@ int unzip_file(const char *zipPath, const char *destDir) {
     char cmd[MAX_PATH_LEN * 2];
     int ret;
 
-    // 1. 确保目标解压目录存在
-    if (access(destDir, F_OK) != 0) {
-        if (mkdir(destDir, 0755) != 0) {
-            printf("Error: Failed to create directory %s, errno: %d\n", destDir, errno);
+    // 1. 如果解压目录存在，先删除
+    if (access(destDir, F_OK) == 0) {
+        snprintf(cmd, sizeof(cmd), "rm -rf %s", destDir);
+        ret = system(cmd);
+        if (ret != 0) {
+            printf("Error: Failed to remove existing directory %s\n", destDir);
             return -1;
         }
+    }
+
+    // 2. 创建解压目录
+    if (mkdir(destDir, 0755) != 0) {
+        printf("Error: Failed to create directory %s, errno=%d\n", destDir, errno);
+        return -1;
     }
 
     // 2. 使用 unzip -o 强制覆盖解压到指定目录
