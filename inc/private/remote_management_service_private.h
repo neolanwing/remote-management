@@ -58,6 +58,8 @@ extern "C" {
 #define OTA_TARGET_DIR          "/usr/pmf406/"
 #define MAX_PATH_LEN            256
 #define MAX_MD5_LEN             33  // 32 字符 + '\0'
+#define MAX_SHA1_LEN            41  // 40 字符 + '\0'
+#define MAX_SHA256_LEN          65  // 64 字符 + '\0'
 
 // 用于重启后检查的标志文件
 #define OTA_STATUS_FILE         "upgrade.txt"
@@ -116,6 +118,10 @@ REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int remote_management_register_protocol_mes
 
 // MD5 文件计算函数 (OpenSSL 实现)
 REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int md5_file(const char *filePath, char *md5_out);
+// SHA-1 文件计算函数 (OpenSSL 实现)
+REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int sha1_file(const char *filePath, char *sha1_out);
+// SHA-256 文件计算函数 (OpenSSL 实现)
+REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int sha256_file(const char *filePath, char *sha256_out);
 
 // 文件下载函数 (命令 实现)
 REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int http_download_file(const char *url, const char *savePath);

@@ -271,6 +271,8 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
     char base_filename[MAX_PATH_LEN] = {0};
     long downloaded_size;
     char calculated_md5[MAX_MD5_LEN] = {0};
+    char calculated_sha1[MAX_SHA1_LEN] = {0};
+    char calculated_sha256[MAX_SHA256_LEN] = {0};
     // 清理临时文件和目录
     char cleanup_cmd[MAX_PATH_LEN * 2]={0};
 
@@ -312,12 +314,30 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
     }
 
     // 3.2 Sign 字段比对 (不区分大小写)
-    if (strcasecmp(calculated_md5, cmd->data.sign) != 0) {
-        remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "SIGN字段校验失败");
-        goto cleanup;
+    if (strcasecmp(cmd->data.signMethod, "md5") == 0 || strlen(cmd->data.signMethod) == 0) {
+        if (strcasecmp(calculated_md5, cmd->data.sign) != 0) {
+            remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "SIGN字段校验失败");
+            goto cleanup;
+        }
+    } else if (strcasecmp(cmd->data.signMethod, "sha-1") == 0) {
+        if (sha1_file(zip_path, calculated_sha1) != 0) {
+            remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "SHA-1签名校验失败");
+            goto cleanup;
+        }
+        if (strcasecmp(calculated_sha1, cmd->data.sign) != 0) {
+            remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "SIGN字段校验失败");
+            goto cleanup;
+        }      
+    } else if (strcasecmp(cmd->data.signMethod, "sha-256") == 0) {
+        if (sha256_file(zip_path, calculated_sha256) != 0) {
+            remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "SHA-256签名校验失败");
+            goto cleanup;
+        }
+        if (strcasecmp(calculated_sha256, cmd->data.sign) != 0) {
+            remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "SIGN字段校验失败");
+            goto cleanup;
+        }      
     }
-
-
     // ---- 步骤 4. 文件解压 (强制覆盖到同名目录) ----
     if (unzip_file(zip_path, extract_dir) != 0) {
         remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "解压失败");
@@ -890,12 +910,14 @@ static int msgarrvd(void *context, char *topicName, int topicLen, MQTTClient_mes
                 cJSON *url_item = cJSON_GetObjectItem(data_item, "url");
                 cJSON *version_item = cJSON_GetObjectItem(data_item, "version");
                 cJSON *md5_item = cJSON_GetObjectItem(data_item, "md5");
+                cJSON *signMethod_item = cJSON_GetObjectItem(data_item, "signMethod");
                 cJSON *sign_item = cJSON_GetObjectItem(data_item, "sign");
                 cJSON *size_item = cJSON_GetObjectItem(data_item, "size");
 
                 if (url_item && cJSON_IsString(url_item)) strncpy(cmd.data.url, url_item->valuestring, sizeof(cmd.data.url) - 1);
                 if (version_item && cJSON_IsString(version_item)) strncpy(cmd.data.version, version_item->valuestring, sizeof(cmd.data.version) - 1);
                 if (md5_item && cJSON_IsString(md5_item)) strncpy(cmd.data.md5, md5_item->valuestring, sizeof(cmd.data.md5) - 1);
+                if (signMethod_item && cJSON_IsString(signMethod_item)) strncpy(cmd.data.signMethod, signMethod_item->valuestring, sizeof(cmd.data.signMethod) - 1);
                 if (sign_item && cJSON_IsString(sign_item)) strncpy(cmd.data.sign, sign_item->valuestring, sizeof(cmd.data.sign) - 1);
                 if (size_item && cJSON_IsNumber(size_item)) cmd.data.size = size_item->valueint;
             }

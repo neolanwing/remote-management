@@ -448,7 +448,74 @@ int md5_file(const char *filePath, char *md5_out)
 
     return 0;
 }
+// SHA-1 文件计算函数 (OpenSSL 实现)
+int sha1_file(const char *filePath, char *sha1_out)
+{
+    unsigned char c[SHA_DIGEST_LENGTH];
+    FILE *inFile = NULL;
+    SHA_CTX shaContext;
+    int bytes;
+    unsigned char data[1024];
+    int i;
 
+    inFile = fopen(filePath, "rb");
+    if (inFile == NULL) {
+        printf("Error: Cannot open file %s for SHA-1 calculation.\n", filePath);
+        return -1;
+    }
+
+    SHA1_Init(&shaContext);
+
+    while ((bytes = fread(data, 1, 1024, inFile)) != 0) {
+        SHA1_Update(&shaContext, data, bytes);
+    }
+
+    SHA1_Final(c, &shaContext);
+
+    fclose(inFile);
+
+    // 将结果转换为 40 位小写十六进制字符串
+    for (i = 0; i < SHA_DIGEST_LENGTH; i++) {
+        sprintf(&sha1_out[i * 2], "%02x", c[i]);
+    }
+    sha1_out[MAX_SHA1_LEN - 1] = '\0';
+
+    return 0;
+}
+// SHA-256 文件计算函数 (OpenSSL 实现)
+int sha256_file(const char *filePath, char *sha256_out)
+{
+    unsigned char c[SHA256_DIGEST_LENGTH];
+    FILE *inFile = NULL;
+    SHA256_CTX sha256Context;
+    int bytes;
+    unsigned char data[1024];
+    int i;
+
+    inFile = fopen(filePath, "rb");
+    if (inFile == NULL) {
+        printf("Error: Cannot open file %s for SHA-256 calculation.\n", filePath);
+        return -1;
+    }
+
+    SHA256_Init(&sha256Context);
+
+    while ((bytes = fread(data, 1, 1024, inFile)) != 0) {
+        SHA256_Update(&sha256Context, data, bytes);
+    }
+
+    SHA256_Final(c, &sha256Context);
+
+    fclose(inFile);
+
+    // 将结果转换为 64 位小写十六进制字符串
+    for (i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+        sprintf(&sha256_out[i * 2], "%02x", c[i]);
+    }
+    sha256_out[MAX_SHA256_LEN - 1] = '\0';
+
+    return 0;
+}
 // HTTP 文件下载函数 (系统命令实现)
 int http_download_file(const char *url, const char *savePath){
     if (!url || !savePath) return -1;
