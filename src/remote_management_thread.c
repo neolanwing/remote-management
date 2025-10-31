@@ -42,7 +42,7 @@
 ******************************************************************************/
 //#define ADDRESS   "mqtt.xjpmf.cloud:1883"
 #define ADDRESS   "39.105.53.134:1883"
-#define CLIENTID  "syncReThread"
+#define CLIENTID  "otaThread"
 #define TOPIC     "demo/status"
 #define QOS       1
 #define KEEPALIVE 20
@@ -61,18 +61,9 @@
 ******************************************************************************/
 static MQTTClient remote_management_client;
 static u8 remote_management_online_flag = 0;
-static u32 remote_management_device_attribute_cyc_tick = 0;
-static u32 remote_management_pub_num = 0;
 static volatile MQTTClient_deliveryToken remote_management_deliveredtoken;
 
-static u8  remote_management_event_switch = 1;
-static u8  remote_management_log_switch = 0;
-static u8  remote_management_protocol_switch = 0;
 //发布主题
-char remote_management_device_attribute_topic[64]="/sys/%s/iot/post";
-char remote_management_device_event_topic[64]="/sys/%s/iot/event/post";
-char remote_management_device_protocolmessage_topic[64]="/sys/%s/protocolmessage/post";
-char remote_management_device_log_topic[64]="/sys/%s/log/post";
 char remote_management_device_ota_progress_topic[64]="/ota/device/progress/%s";
 char remote_management_device_ota_inform_topic[64]="/ota/device/inform/%s";
 char remote_management_device_ota_upgrade_topic[64]="/ota/device/upgrade/%s";
@@ -82,83 +73,7 @@ char remote_management_device_ota_upgrade_topic[64]="/ota/device/upgrade/%s";
 **API函数实现
 ******************************************************************************/
 extern char *get_terminal_id ( void );
-extern int system_init_flag(void);
 
-
-static void get_hw_version(const char *xml_file,char *out)
-{
-    if (!out) return;
-    FILE    *fp = fopen(xml_file, "r");
-    if (!fp) return;
-    mxml_node_t *tree = mxmlLoadFile(NULL, fp, MXML_TEXT_CALLBACK);
-    fclose(fp);
-    if (!tree) return;
-
-
-    mxml_node_t *inf  = mxmlFindElement(tree, tree, "inf",  NULL, NULL, MXML_DESCEND_FIRST);
-    mxml_node_t *comm = mxmlFindElement(inf,  inf,  "comm", NULL, NULL, MXML_DESCEND_FIRST);
-    mxml_node_t *hw   = mxmlFindElement(comm, comm, "Hardware", NULL, NULL, MXML_DESCEND_FIRST);
-
-    const char *ret = NULL;
-    for (mxml_node_t *txt = mxmlGetFirstChild(hw);
-         txt;
-         txt = mxmlGetNextSibling(txt))
-    {
-        if (mxmlGetType(txt) == MXML_TEXT &&
-            mxmlGetText(txt, NULL) != NULL &&
-            mxmlGetText(txt, NULL)[0] != '\n' &&
-            mxmlGetText(txt, NULL)[0] != '\0')
-        {
-            ret = mxmlGetText(txt, NULL);
-            break;
-        }
-    }
-    printf("yjbbh:%s\n",ret);
-    strcpy(out,ret);
-    mxmlDelete(tree);
-}
-
-
-static void get_cal_crc(const char *xml_file,char *out)
-{
-    if (!out) return;
-    FILE *fp = fopen(xml_file, "r");
-    if (!fp) return;
-
-    mxml_node_t *tree = mxmlLoadFile(NULL, fp, MXML_TEXT_CALLBACK);
-    fclose(fp);
-    if (!tree) return;
-
-    mxml_node_t *inf  = mxmlFindElement(tree, tree, "inf",  NULL, NULL, MXML_DESCEND_FIRST);
-    mxml_node_t *comm = mxmlFindElement(inf,  inf,  "comm", NULL, NULL, MXML_DESCEND_FIRST);
-    mxml_node_t *cal  = mxmlFindElement(comm, comm, "CAL",  NULL, NULL, MXML_DESCEND_FIRST);
-
-    const char *ret = cal ? mxmlGetText(cal, NULL) : NULL;
-    strcpy(out,ret);
-    mxmlDelete(tree);
-}
-
-
-static void get_version(const char *xml_file,char *out)
-{
-    if (!out) return;
-    FILE *fp = fopen(xml_file, "r");
-    if (!fp) return;
-
-    mxml_node_t *tree = mxmlLoadFile(NULL, fp, MXML_TEXT_CALLBACK);
-    fclose(fp);
-    if (!tree) return;
-
-    mxml_node_t *inf  = mxmlFindElement(tree, tree, "inf",  NULL, NULL, MXML_DESCEND_FIRST);
-    mxml_node_t *comm = mxmlFindElement(inf,  inf,  "comm", NULL, NULL, MXML_DESCEND_FIRST);
-    mxml_node_t *ver  = mxmlFindElement(comm, comm, "Version", NULL, NULL, MXML_DESCEND_FIRST);
-
-    const char *ret = ver ? mxmlGetText(ver, NULL) : NULL;
-    printf("rjversion:%s\n",ret);
-    strcpy(out,ret);
-    mxmlDelete(tree);
-
-}
 
 static void remote_management_ota_progress_handler(const char *service_id, UPDATE_STATUS status, const char *msg)
 {
@@ -268,6 +183,7 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
     char zip_filename[MAX_PATH_LEN] = {0};
     char zip_path[MAX_PATH_LEN] = {0};
     char extract_dir[MAX_PATH_LEN] = {0};
+    char delete_dir[MAX_PATH_LEN] = {0};
     char base_filename[MAX_PATH_LEN] = {0};
     long downloaded_size;
     char calculated_md5[MAX_MD5_LEN] = {0};
@@ -286,6 +202,7 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
     snprintf(zip_filename, sizeof(zip_filename), "%s.zip", base_filename);
     snprintf(zip_path, sizeof(zip_path), "%s%s", download_dir, zip_filename);
     snprintf(extract_dir, sizeof(extract_dir), "%s%s/", download_dir, base_filename);
+    snprintf(delete_dir, sizeof(delete_dir), "%s%s/", download_dir, base_filename);
 
 
     // ---- 步骤 1. 文件下载 (强制覆盖) ----
@@ -316,7 +233,7 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
     // 3.2 Sign 字段比对 (不区分大小写)
     if (strcasecmp(cmd->data.signMethod, "md5") == 0 || strlen(cmd->data.signMethod) == 0) {
         if (strcasecmp(calculated_md5, cmd->data.sign) != 0) {
-            remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "SIGN字段校验失败");
+            remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "SIGN字段md5校验失败");
             goto cleanup;
         }
     } else if (strcasecmp(cmd->data.signMethod, "sha-1") == 0) {
@@ -325,7 +242,7 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
             goto cleanup;
         }
         if (strcasecmp(calculated_sha1, cmd->data.sign) != 0) {
-            remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "SIGN字段校验失败");
+            remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "SIGN字段sha-1校验失败");
             goto cleanup;
         }      
     } else if (strcasecmp(cmd->data.signMethod, "sha-256") == 0) {
@@ -334,7 +251,7 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
             goto cleanup;
         }
         if (strcasecmp(calculated_sha256, cmd->data.sign) != 0) {
-            remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "SIGN字段校验失败");
+            remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "SIGN字段sha-256校验失败");
             goto cleanup;
         }      
     }
@@ -441,401 +358,19 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
 
     // ---- 步骤 7. 系统重启 ----
     printf("OTA files deployed successfully. Executing system reboot...\n");
-    system("reboot");
+    system("sync; reboot &");
 
 cleanup:
 
 
     // 清理解压目录
-    snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf %s", extract_dir);
+    snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf %s", delete_dir);
     system(cleanup_cmd);
 
     // 清理下载的ZIP文件
     remove(zip_path);
 
     return ret;
-}
-
-void remote_management_event_handler(u32 service_id, const char *msg)
-{
-    printf("into event handler:%d,%s\n",service_id,msg);
-
-    if(remote_management_online_flag==0)
-    	return;
-    if(!msg)
-    	return;
-
-    MQTTClient_message pubmsg = MQTTClient_message_initializer;
-    MQTTClient_deliveryToken token;
-
-    char *ptr;
-    time_t rawtime;
-
-            char topic_tmp[128];
-            sprintf(topic_tmp,remote_management_device_event_topic,get_terminal_id());
-            printf("remote_management_device_event_topic:%s\n",topic_tmp);
-            if(topic_tmp != NULL)
-            {
-                    cJSON *json_obj = cJSON_CreateObject();
-                    if(json_obj)
-                    {
-                        cJSON *json_obj_params = cJSON_CreateObject();
-                        cJSON *json_obj_sys = cJSON_CreateObject();
-                        if(json_obj_params&&json_obj_sys)
-                        {
-                        	char msg_id_string[32]={0};
-                        	sprintf(msg_id_string,"%u",remote_management_pub_num);
-                            cJSON_AddStringToObject(json_obj, "id", msg_id_string);
-                            cJSON_AddStringToObject(json_obj, "version", remote_management_version);
-                            cJSON_AddStringToObject(json_obj, "sn", get_terminal_id());
-                            cJSON_AddItemToObject(json_obj, "sys", json_obj_sys);
-                            cJSON_AddNumberToObject(json_obj_sys,"ack",0);
-                            time(&rawtime);
-                            cJSON_AddNumberToObject(json_obj,"time",rawtime);
-                            cJSON_AddItemToObject(json_obj, "params", json_obj_params);
-                            cJSON_AddNumberToObject(json_obj_params,"serviceid",service_id);
-                            cJSON_AddStringToObject(json_obj_params, "eventmsg", msg);
-                            ptr = cJSON_Print(json_obj);
-                            if(ptr)
-                            {
-                                pubmsg.payload = (void *)ptr;
-                                pubmsg.payloadlen = strlen(pubmsg.payload);
-                                pubmsg.qos = 0;
-                                pubmsg.retained = 0;
-                                if (MQTTClient_publishMessage(remote_management_client, topic_tmp, &pubmsg, &token) != MQTTCLIENT_SUCCESS)
-                                	remote_management_online_flag=0;
-                                remote_management_pub_num++;
-                                free(ptr);
-                                usleep(10000);
-                            }
-                        }
-                        cJSON_Delete(json_obj);
-                    }
-            }
-}
-
-
-
-void remote_management_ulog_handler(REMOTE_MANAGEMENT_ULOG_LEVEL level, const char *msg)
-{
-    printf("into ulog handler:%d,%s\n",level,msg);
-
-    if(remote_management_online_flag==0)
-    	return;
-    if(!msg)
-    	return;
-    MQTTClient_message pubmsg = MQTTClient_message_initializer;
-    MQTTClient_deliveryToken token;
-
-    char *ptr;
-    time_t rawtime;
-
-            char topic_tmp[128];
-            sprintf(topic_tmp,remote_management_device_log_topic,get_terminal_id());
-            printf("remote_management_device_ulog_topic:%s\n",topic_tmp);
-            if(topic_tmp != NULL)
-            {
-                    cJSON *json_obj = cJSON_CreateObject();
-                    if(json_obj)
-                    {
-                        cJSON *json_obj_params = cJSON_CreateObject();
-                        cJSON *json_obj_sys = cJSON_CreateObject();
-                        if(json_obj_params&&json_obj_sys)
-                        {
-                        	char msg_id_string[32]={0};
-                        	sprintf(msg_id_string,"%u",remote_management_pub_num);
-                            cJSON_AddStringToObject(json_obj, "id", msg_id_string);
-                            cJSON_AddStringToObject(json_obj, "version", remote_management_version);
-                            cJSON_AddStringToObject(json_obj, "sn", get_terminal_id());
-                            cJSON_AddItemToObject(json_obj, "sys", json_obj_sys);
-                            cJSON_AddNumberToObject(json_obj_sys,"ack",0);
-                            cJSON_AddItemToObject(json_obj, "params", json_obj_params);
-                            time(&rawtime);
-                            cJSON_AddNumberToObject(json_obj_params,"time",rawtime);
-                            char log_level[32]={0};
-                            if(level == REMOTE_MANAGEMENT_DEBUG)
-                                strcpy(log_level,"DEBUG");
-                            else if(level == REMOTE_MANAGEMENT_INFO)
-                                strcpy(log_level,"INFO");
-                            else if(level == REMOTE_MANAGEMENT_WARN)
-                                strcpy(log_level,"WARN");
-                            else if(level == REMOTE_MANAGEMENT_ERROR)
-                                strcpy(log_level,"ERROR");
-                            else if(level == REMOTE_MANAGEMENT_FATAL)
-                                strcpy(log_level,"FATAL");
-                            else
-                                strcpy(log_level,"DEBUG");
-                            cJSON_AddStringToObject(json_obj_params,"logLevel",log_level);
-                            cJSON_AddStringToObject(json_obj_params, "code", "0");
-                            cJSON_AddStringToObject(json_obj_params, "logContent", msg);
-                            ptr = cJSON_Print(json_obj);
-                            if(ptr)
-                            {
-                                pubmsg.payload = (void *)ptr;
-                                pubmsg.payloadlen = strlen(pubmsg.payload);
-                                pubmsg.qos = 0;
-                                pubmsg.retained = 0;
-                                if (MQTTClient_publishMessage(remote_management_client, topic_tmp, &pubmsg, &token) != MQTTCLIENT_SUCCESS)
-                                	remote_management_online_flag=0;
-                                remote_management_pub_num++;
-                                free(ptr);
-                                usleep(10000);
-                            }
-                        }
-                        cJSON_Delete(json_obj);
-                    }
-            }
-}
-
-
-void remote_management_protocol_message_handler(u32 service_id,u32 dev_id,SERVICE_PROTOCOL_TYPE protocol_type, const char *msg,u16 len)
-{
-    printf("into protocol_message handler,service_id:%d,dev_id:%d\n",service_id,dev_id);
-
-    if(remote_management_online_flag==0)
-    	return;
-    if(!msg)
-    	return;
-    if((len>=1024)||(len == 0))
-    	return;
-
-    char protocol_type_buf[32]={0};
-    switch (protocol_type)
-    {
-		case SERVICE_PROTOCOL_TYPE_IEC104_UP:
-            strcpy(protocol_type_buf,"IEC104_UP");
-			break;
-		case SERVICE_PROTOCOL_TYPE_IEC101_UP:
-            strcpy(protocol_type_buf,"IEC101_UP");
-			break;
-		case SERVICE_PROTOCOL_TYPE_IEC103_UP:
-            strcpy(protocol_type_buf,"IEC103_UP");
-			break;
-		case SERVICE_PROTOCOL_TYPE_CDT_UP:
-            strcpy(protocol_type_buf,"CDT_UP");
-			break;
-		case SERVICE_PROTOCOL_TYPE_DNP_UP:
-            strcpy(protocol_type_buf,"DNP_UP");
-			break;
-		case SERVICE_PROTOCOL_TYPE_MODBUS_SLAVE:
-            strcpy(protocol_type_buf,"MODBUS_SLAVE");
-			break;
-		case SERVICE_PROTOCOL_TYPE_DLT645_UP:
-            strcpy(protocol_type_buf,"DLT645_UP");
-			break;
-		case SERVICE_PROTOCOL_TYPE_IEC61850_UP:
-            strcpy(protocol_type_buf,"IEC61850_UP");
-			break;
-		case SERVICE_PROTOCOL_TYPE_DEBUG_UP:
-            strcpy(protocol_type_buf,"DEBUG_UP");
-			break;
-		case SERVICE_PROTOCOL_TYPE_XJ104_UP:
-            strcpy(protocol_type_buf,"XJ104_UP");
-			break;
-		case SERVICE_PROTOCOL_TYPE_SEMS8000_UP:
-            strcpy(protocol_type_buf,"SEMS8000_UP");
-			break;
-		case SERVICE_PROTOCOL_TYPE_MQTT_UP:
-            strcpy(protocol_type_buf,"MQTT_UP");
-			break;
-		case SERVICE_PROTOCOL_TYPE_OPCUA_UP:
-            strcpy(protocol_type_buf,"OPCUA_UP");
-			break;
-		case SERVICE_PROTOCOL_TYPE_IEC104_DOWN:
-            strcpy(protocol_type_buf,"IEC104_DOWN");
-			break;
-		case SERVICE_PROTOCOL_TYPE_IEC101_DOWN:
-            strcpy(protocol_type_buf,"IEC101_DOWN");
-			break;
-		case SERVICE_PROTOCOL_TYPE_IEC103_DOWN:
-            strcpy(protocol_type_buf,"IEC103_DOWN");
-			break;
-		case SERVICE_PROTOCOL_TYPE_CDT_DOWN:
-            strcpy(protocol_type_buf,"CDT_DOWN");
-			break;
-		case SERVICE_PROTOCOL_TYPE_DNP_DOWN:
-            strcpy(protocol_type_buf,"DNP_DOWN");
-			break;
-		case SERVICE_PROTOCOL_TYPE_MODBUS_MASTER:
-            strcpy(protocol_type_buf,"MODBUS_MASTER");
-			break;
-		case SERVICE_PROTOCOL_TYPE_DLT645_DOWN:
-            strcpy(protocol_type_buf,"DLT645_DOWN");
-			break;
-		case SERVICE_PROTOCOL_TYPE_WFXJ104_DOWN:
-            strcpy(protocol_type_buf,"WFXJ104_DOWN");
-			break;
-		case SERVICE_PROTOCOL_TYPE_CJT188_DOWN:
-            strcpy(protocol_type_buf,"CJT188_DOWN");
-			break;
-		case SERVICE_PROTOCOL_TYPE_XJ104_DOWN:
-            strcpy(protocol_type_buf,"XJ104_DOWN");
-			break;
-		case SERVICE_PROTOCOL_TYPE_COMBINED_DOWN:
-            strcpy(protocol_type_buf,"COMBINED_DOWN");
-			break;
-		default:
-			printf("unknow PROTOCOL TYPE\n");
-    }
-    if(strlen(protocol_type_buf) == 0)
-    	return;
-
-    char message_buf[2048]={0};
-    printf("recvlen:%d\n",len);
-    if(protocol_type == SERVICE_PROTOCOL_TYPE_MQTT_UP)
-    {
-    	strcpy(message_buf,msg);
-    }
-    else
-    {
-    	int i=0;
-        for(i = 0; i < len; i++)
-        {
-        	printf("msg[%d]:%02x\n",i,msg[i]);
-        	sprintf(message_buf+i*2,"%02x",msg[i]);
-        }
-    }
-
-
-    MQTTClient_message pubmsg = MQTTClient_message_initializer;
-    MQTTClient_deliveryToken token;
-
-    char *ptr;
-    time_t rawtime;
-
-            char topic_tmp[128];
-            sprintf(topic_tmp,remote_management_device_protocolmessage_topic,get_terminal_id());
-            printf("remote_management_device_protocol_message_topic:%s\n",topic_tmp);
-            if(topic_tmp != NULL)
-            {
-                    cJSON *json_obj = cJSON_CreateObject();
-                    if(json_obj)
-                    {
-                        cJSON *json_obj_params = cJSON_CreateObject();
-                        cJSON *json_obj_sys = cJSON_CreateObject();
-                        if(json_obj_params&&json_obj_sys)
-                        {
-                        	char msg_id_string[32]={0};
-                        	sprintf(msg_id_string,"%u",remote_management_pub_num);
-                            cJSON_AddStringToObject(json_obj, "id", msg_id_string);
-                            cJSON_AddStringToObject(json_obj, "version", remote_management_version);
-                            cJSON_AddStringToObject(json_obj, "sn", get_terminal_id());
-                            cJSON_AddItemToObject(json_obj, "sys", json_obj_sys);
-                            cJSON_AddNumberToObject(json_obj_sys,"ack",0);
-                            cJSON_AddItemToObject(json_obj, "params", json_obj_params);
-                            time(&rawtime);
-                            cJSON_AddNumberToObject(json_obj_params,"time",rawtime);
-
-                            cJSON_AddStringToObject(json_obj_params,"protocolType",protocol_type_buf);
-                            cJSON_AddNumberToObject(json_obj_params, "serviceId",service_id);
-                            cJSON_AddNumberToObject(json_obj_params, "deviceId", dev_id);
-                            cJSON_AddStringToObject(json_obj_params, "protocolMessage", message_buf);
-                            ptr = cJSON_Print(json_obj);
-                            if(ptr)
-                            {
-                                pubmsg.payload = (void *)ptr;
-                                pubmsg.payloadlen = strlen(pubmsg.payload);
-                                pubmsg.qos = 0;
-                                pubmsg.retained = 0;
-                                if (MQTTClient_publishMessage(remote_management_client, topic_tmp, &pubmsg, &token) != MQTTCLIENT_SUCCESS)
-                                	remote_management_online_flag=0;
-                                remote_management_pub_num++;
-                                free(ptr);
-                                usleep(10000);
-                            }
-                        }
-                        cJSON_Delete(json_obj);
-                    }
-            }
-}
-
-
-static void device_attribute_cyc_msg_pub()
-{
-    MQTTClient_message pubmsg = MQTTClient_message_initializer;
-    MQTTClient_deliveryToken token;
-
-    char *ptr;
-    time_t rawtime;
-    u32 tick;
-
-    tick = get_tick_count();
-    if(tick - remote_management_device_attribute_cyc_tick > 300000)    //
-    {
-            char topic_tmp[128];
-            sprintf(topic_tmp,remote_management_device_attribute_topic,get_terminal_id());
-            printf("device_attribute_cyc_msg_topic:%s\n",topic_tmp);
-            if(topic_tmp != NULL)
-            {
-                    cJSON *json_obj = cJSON_CreateObject();
-                    if(json_obj)
-                    {
-                        cJSON *json_obj_params = cJSON_CreateObject();
-                        cJSON *json_obj_sys = cJSON_CreateObject();
-                        if(json_obj_params&&json_obj_sys)
-                        {
-                        	char msg_id_string[32]={0};
-                        	sprintf(msg_id_string,"%u",remote_management_pub_num);
-                            cJSON_AddStringToObject(json_obj, "id", msg_id_string);
-                            cJSON_AddStringToObject(json_obj, "version", remote_management_version);
-                            cJSON_AddStringToObject(json_obj, "sn", get_terminal_id());
-                            cJSON_AddItemToObject(json_obj, "sys", json_obj_sys);
-                            cJSON_AddNumberToObject(json_obj_sys,"ack",0);
-                            time(&rawtime);
-                            cJSON_AddNumberToObject(json_obj,"time",rawtime);
-                            cJSON_AddItemToObject(json_obj, "params", json_obj_params);
-                            char devicetype[32]={0};
-                            get_hw_version("/opt/updata/inf",devicetype);
-                            if(strlen(devicetype)<1)
-                            {
-                                cJSON_Delete(json_obj);
-                                return;
-                            }
-                            char dev_devicetype[32]={0};
-                            sprintf(dev_devicetype,"%s%s","PMF406-",devicetype);
-                            cJSON_AddStringToObject(json_obj_params, "devicetype", dev_devicetype);
-                            char softcrc[32]={0};
-                            get_cal_crc("/opt/updata/inf",softcrc);
-                            if(strlen(softcrc)<1)
-                            {
-                                cJSON_Delete(json_obj);
-                                return;
-                            }
-                            cJSON_AddStringToObject(json_obj_params, "softcrc", softcrc);
-
-                            char softversion[32]={0};
-                            get_version("/opt/updata/inf",softversion);
-                            if(strlen(softversion)<1)
-                            {
-                                cJSON_Delete(json_obj);
-                                return;
-                            }
-                            cJSON_AddStringToObject(json_obj_params, "softversion", softversion);
-                            cJSON_AddNumberToObject(json_obj_params,"event_switch",remote_management_event_switch);
-                            cJSON_AddNumberToObject(json_obj_params,"log_switch",remote_management_log_switch);
-                            cJSON_AddNumberToObject(json_obj_params,"protocol_switch",remote_management_protocol_switch);
-
-                            ptr = cJSON_Print(json_obj);
-                            if(ptr)
-                            {
-                                pubmsg.payload = (void *)ptr;
-                                pubmsg.payloadlen = strlen(pubmsg.payload);
-                                pubmsg.qos = 0;
-                                pubmsg.retained = 0;
-                                if (MQTTClient_publishMessage(remote_management_client, topic_tmp, &pubmsg, &token) != MQTTCLIENT_SUCCESS)
-                                {
-                                	remote_management_online_flag=0;
-                                }
-                                remote_management_pub_num++;
-                                free(ptr);
-                                usleep(10000);
-                            }
-                        }
-                        cJSON_Delete(json_obj);
-                    }
-            }
-        remote_management_device_attribute_cyc_tick = get_tick_count();
-    }
 }
 
 
@@ -925,11 +460,11 @@ static int msgarrvd(void *context, char *topicName, int topicLen, MQTTClient_mes
             cJSON_Delete(root);
 
             // 检查关键参数（防止崩溃）
-            if (strlen(cmd.data.url) > 0 && cmd.data.size > 0) {
+            if (strlen(cmd.data.url) > 0 && cmd.data.size > 0 && strlen(cmd.data.version) > 0) {
                 ota_upgrade_handler(&cmd);
             } else {
                  // 参数不全，报升级失败
-                remote_management_ota_progress_handler(cmd.id, UPDATE_FAILED, "-1升级失败: Missing parameters in command");
+                remote_management_ota_progress_handler(cmd.id, UPDATE_FAILED, "升级失败: 参数缺失");
             }
         }
 
@@ -975,11 +510,6 @@ static void connlost(void *context, char *cause)
 void *remote_management_thread_entry(void *parameter)
 {
 
-    while(system_init_flag())
-    {
-        sleep ( 1 );
-    }
-
     char remote_management_client_name[64]={0};
     sprintf(remote_management_client_name,"%s%s","remote_management_",get_terminal_id());
 
@@ -1001,10 +531,6 @@ void *remote_management_thread_entry(void *parameter)
     char ota_topic[128];
     snprintf(ota_topic, sizeof(ota_topic), remote_management_device_ota_upgrade_topic, sn);
 
-
-    remote_management_register_event_cb(remote_management_event_handler);
-    remote_management_register_ulog_cb(remote_management_ulog_handler);
-    remote_management_register_protocol_message_cb(remote_management_protocol_message_handler);
     while (1)
     {
         if (mqtt_connect(&remote_management_client) == MQTTCLIENT_SUCCESS)
@@ -1022,21 +548,18 @@ void *remote_management_thread_entry(void *parameter)
                 // 清除标志文件
                 clear_ota_finish_status();
             }
-
-            MQTTClient_subscribe(remote_management_client, TOPIC, QOS);
             // 订阅 OTA 升级主题
             MQTTClient_subscribe(remote_management_client, ota_topic, QOS);
 
             while (1)
             {
-            	device_attribute_cyc_msg_pub();
             	if(remote_management_online_flag==0)
             		break;
                 sleep(1);
             }
         }
-        printf("remote management connect failed\n");
-        MQTTClient_disconnect(remote_management_client, 0);
+            printf("remote management connect failed\n");
+            MQTTClient_disconnect(remote_management_client, 0);
         	sleep(10);
     }
 

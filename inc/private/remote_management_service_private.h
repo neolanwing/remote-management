@@ -20,7 +20,7 @@
 ********************************************************************************/
 
 #ifndef _REMOTE_MANAGEMENT_SEVICE_PRIVATE_H_
-#define _REMOTE_MANAGEMENT_SEVICE_PRIVATE_GLOBALS_H_
+#define _REMOTE_MANAGEMENT_SEVICE_PRIVATE_H_
 
 
 #ifdef  REMOTE_MANAGEMENT_SEVICE_PRIVATE_GLOBALS
@@ -82,7 +82,7 @@ typedef struct
     int code;
     struct {
         int size;
-        char sign[64];
+        char sign[128];
         char version[64];
         int isDiff;
         char url[MAX_PATH_LEN];
@@ -99,11 +99,6 @@ typedef enum
 	FLASH_FAILED    = -4,   // 烧写失败
 } UPDATE_STATUS;
 
-typedef void (*remote_management_event_cb_t)(u32 service_id, const char *msg);
-
-typedef void (*remote_management_ulog_cb_t)(REMOTE_MANAGEMENT_ULOG_LEVEL level, const char *msg);
-
-typedef void (*remote_management_protocol_message_cb_t)(u32 service_id,u32 dev_id,SERVICE_PROTOCOL_TYPE protocol_type, const char *msg,u16 len);
 
 /******************************************************************************..............
 **全局变量定义
@@ -112,9 +107,6 @@ typedef void (*remote_management_protocol_message_cb_t)(u32 service_id,u32 dev_i
 /******************************************************************************
 **API函数实现
 ******************************************************************************/
-REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int remote_management_register_event_cb(remote_management_event_cb_t cb);
-REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int remote_management_register_ulog_cb(remote_management_ulog_cb_t cb);
-REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int remote_management_register_protocol_message_cb(remote_management_protocol_message_cb_t cb);
 
 // MD5 文件计算函数 (OpenSSL 实现)
 REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int md5_file(const char *filePath, char *md5_out);
