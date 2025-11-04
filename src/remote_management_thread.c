@@ -194,6 +194,7 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
 
     const char *target_dir = OTA_TARGET_DIR;
     const char *download_dir = OTA_DOWNLOAD_DIR;
+    const char *so_target_dir = SO_TARGET_DIR;
 
     printf("Starting OTA upgrade for version: %s\n", cmd->data.version);
 
@@ -316,6 +317,40 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
         // 跳过目录和特殊项
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0 || entry->d_type == DT_DIR) {
             continue;
+        }
+
+        const char *suffix = strrchr(entry->d_name, '.');
+
+        // ---- 新增：处理 .so 文件，只放入 /usr/lib/ ----
+        if (suffix && strcmp(suffix, ".so") == 0) {
+            char old_lib_path[MAX_PATH_LEN];
+            char new_lib_path[MAX_PATH_LEN];
+            char copy_lib_cmd[MAX_PATH_LEN * 2];
+
+            snprintf(old_lib_path, sizeof(old_lib_path), "%s%s", so_target_dir, entry->d_name);
+            snprintf(new_lib_path, sizeof(new_lib_path), "%s%s", extract_dir, entry->d_name);
+
+            // 删除旧的 .so
+            if (access(old_lib_path, F_OK) == 0) {
+                printf("Deleting old file: %s\n", old_lib_path);
+                remove(old_lib_path);
+            }
+
+            // 复制新的 .so 文件到 /usr/lib/
+            snprintf(copy_lib_cmd, sizeof(copy_lib_cmd), "cp -f %s %s", new_lib_path, so_target_dir);
+            if (system(copy_lib_cmd) != 0) {
+                printf("Error: Failed to copy %s to %s\n", entry->d_name, so_target_dir);
+                closedir(dir);
+                remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "烧写失败");
+                goto cleanup;
+            }
+
+            // 设置权限
+            char final_lib_path[MAX_PATH_LEN];
+            snprintf(final_lib_path, sizeof(final_lib_path), "%s%s", so_target_dir, entry->d_name);
+            chmod(final_lib_path, S_IRWXU | S_IRWXG | S_IRWXO);
+
+            continue; // 直接跳过 /usr/pmf406/ 的逻辑
         }
 
         char old_target_path[MAX_PATH_LEN];

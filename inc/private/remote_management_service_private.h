@@ -56,6 +56,8 @@ extern "C" {
 #define OTA_DOWNLOAD_DIR        "/opt/update/"
 // 目标程序安装目录
 #define OTA_TARGET_DIR          "/usr/pmf406/"
+// so文件安装目录
+#define SO_TARGET_DIR          "/usr/lib/"
 #define MAX_PATH_LEN            256
 #define MAX_MD5_LEN             33  // 32 字符 + '\0'
 #define MAX_SHA1_LEN            41  // 40 字符 + '\0'
