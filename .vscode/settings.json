@@ -1,6 +1,7 @@
 {
   "files.associations": {
     "remote_management_service_private.h": "c",
-    "remote_management_service.h": "c"
+    "remote_management_service.h": "c",
+    "inc_private.h": "c"
   }
 }
