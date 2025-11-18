@@ -80,6 +80,7 @@ char remote_management_device_ota_upgrade_topic[64]="/ota/device/upgrade/%s";
 extern char *get_terminal_id ( void );
 
 
+
 static void get_hw_version(const char *xml_file,char *out)
 {
     if (!out) return;
@@ -872,6 +873,7 @@ void remote_management_thread_init(void)
     if (pthread_create(&remote_management_thread, NULL, remote_management_thread_entry, NULL) != 0)
     {
         printf("remote_management_thread error\n");
+        g_ota_service_running = 0;
         return;
     }
     return;

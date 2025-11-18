@@ -5,7 +5,7 @@
 extern void remote_management_thread_init(void);
 
 // 程序运行标志
-static volatile int g_ota_service_running = 1;
+volatile int g_ota_service_running = 1;
 
 
 // 捕获 Ctrl+C / systemd 停止信号
