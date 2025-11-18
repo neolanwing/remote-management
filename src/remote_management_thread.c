@@ -55,15 +55,20 @@
 /******************************************************************************
 **结构类型定义
 ******************************************************************************/
-
+typedef struct {
+    unsigned long long user, nice, system, idle, iowait, irq, softirq, steal;
+} cpu_stats_t;
 /******************************************************************************
 **静态变量定义
 ******************************************************************************/
 static MQTTClient remote_management_client;
 static u8 remote_management_online_flag = 0;
+static u32 remote_management_pub_num = 0;
+static u32 remote_management_device_attribute_cyc_tick = 0;
 static volatile MQTTClient_deliveryToken remote_management_deliveredtoken;
 
 //发布主题
+char remote_management_device_attribute_topic[64]="/sys/%s/iot/post";
 char remote_management_device_ota_progress_topic[64]="/ota/device/progress/%s";
 char remote_management_device_ota_inform_topic[64]="/ota/device/inform/%s";
 char remote_management_device_ota_upgrade_topic[64]="/ota/device/upgrade/%s";
@@ -75,6 +80,264 @@ char remote_management_device_ota_upgrade_topic[64]="/ota/device/upgrade/%s";
 extern char *get_terminal_id ( void );
 
 
+static void get_hw_version(const char *xml_file,char *out)
+{
+    if (!out) return;
+    FILE    *fp = fopen(xml_file, "r");
+    if (!fp) return;
+    mxml_node_t *tree = mxmlLoadFile(NULL, fp, MXML_TEXT_CALLBACK);
+    fclose(fp);
+    if (!tree) return;
+
+
+    mxml_node_t *inf  = mxmlFindElement(tree, tree, "inf",  NULL, NULL, MXML_DESCEND_FIRST);
+    mxml_node_t *comm = mxmlFindElement(inf,  inf,  "comm", NULL, NULL, MXML_DESCEND_FIRST);
+    mxml_node_t *hw   = mxmlFindElement(comm, comm, "Hardware", NULL, NULL, MXML_DESCEND_FIRST);
+
+    const char *ret = NULL;
+    for (mxml_node_t *txt = mxmlGetFirstChild(hw);
+         txt;
+         txt = mxmlGetNextSibling(txt))
+    {
+        if (mxmlGetType(txt) == MXML_TEXT &&
+            mxmlGetText(txt, NULL) != NULL &&
+            mxmlGetText(txt, NULL)[0] != '\n' &&
+            mxmlGetText(txt, NULL)[0] != '\0')
+        {
+            ret = mxmlGetText(txt, NULL);
+            break;
+        }
+    }
+    printf("yjbbh:%s\n",ret);
+    strcpy(out,ret);
+    mxmlDelete(tree);
+}
+
+
+static void get_cal_crc(const char *xml_file,char *out)
+{
+    if (!out) return;
+    FILE *fp = fopen(xml_file, "r");
+    if (!fp) return;
+
+    mxml_node_t *tree = mxmlLoadFile(NULL, fp, MXML_TEXT_CALLBACK);
+    fclose(fp);
+    if (!tree) return;
+
+    mxml_node_t *inf  = mxmlFindElement(tree, tree, "inf",  NULL, NULL, MXML_DESCEND_FIRST);
+    mxml_node_t *comm = mxmlFindElement(inf,  inf,  "comm", NULL, NULL, MXML_DESCEND_FIRST);
+    mxml_node_t *cal  = mxmlFindElement(comm, comm, "CAL",  NULL, NULL, MXML_DESCEND_FIRST);
+
+    const char *ret = cal ? mxmlGetText(cal, NULL) : NULL;
+    strcpy(out,ret);
+    mxmlDelete(tree);
+}
+
+
+static void get_version(const char *xml_file,char *out)
+{
+    if (!out) return;
+    FILE *fp = fopen(xml_file, "r");
+    if (!fp) return;
+
+    mxml_node_t *tree = mxmlLoadFile(NULL, fp, MXML_TEXT_CALLBACK);
+    fclose(fp);
+    if (!tree) return;
+
+    mxml_node_t *inf  = mxmlFindElement(tree, tree, "inf",  NULL, NULL, MXML_DESCEND_FIRST);
+    mxml_node_t *comm = mxmlFindElement(inf,  inf,  "comm", NULL, NULL, MXML_DESCEND_FIRST);
+    mxml_node_t *ver  = mxmlFindElement(comm, comm, "Version", NULL, NULL, MXML_DESCEND_FIRST);
+
+    const char *ret = ver ? mxmlGetText(ver, NULL) : NULL;
+    printf("rjversion:%s\n",ret);
+    strcpy(out,ret);
+    mxmlDelete(tree);
+
+}
+
+static int is_app_running() {
+    FILE *fp = popen("pidof app", "r");
+    if (!fp) return 0;
+
+    char buf[64];
+    int running = 0;
+
+    if(fgets(buf, sizeof(buf), fp)) {
+        // fgets 读到内容表示 pidof 找到了 PID
+        running = 1;
+    }
+
+    pclose(fp);
+    return running;
+}
+
+static float get_memory_usage_percent() {
+    FILE *fp = fopen("/proc/meminfo", "r");
+    if (!fp) return -1;
+
+    char line[256];
+    unsigned long mem_total = 0, mem_free = 0, buffers = 0, cached = 0;
+
+    while(fgets(line, sizeof(line), fp)) {
+        if (sscanf(line, "MemTotal: %lu kB", &mem_total) == 1) continue;
+        if (sscanf(line, "MemFree: %lu kB", &mem_free) == 1) continue;
+        if (sscanf(line, "Buffers: %lu kB", &buffers) == 1) continue;
+        if (sscanf(line, "Cached: %lu kB", &cached) == 1) continue;
+    }
+    fclose(fp);
+
+    if(mem_total == 0) return -1;
+
+    unsigned long used = mem_total - mem_free - buffers - cached;
+    return used * 100.0f / mem_total;
+}
+
+ static get_disk_usage_percent(const char *path) {
+    struct statvfs buf;
+    if(statvfs(path, &buf) != 0) return -1;
+
+    unsigned long total = buf.f_blocks * buf.f_frsize;
+    unsigned long free  = buf.f_bfree * buf.f_frsize;
+    unsigned long used  = total - free;
+
+    if(total == 0) return -1;
+    return used * 100.0f / total;
+}
+
+static int read_cpu_stats(cpu_stats_t *stats) {
+    FILE *fp = fopen("/proc/stat", "r");
+    if(!fp) return -1;
+
+    char line[256];
+    if(fgets(line, sizeof(line), fp)) {
+        sscanf(line, "cpu  %llu %llu %llu %llu %llu %llu %llu %llu",
+            &stats->user,
+            &stats->nice,
+            &stats->system,
+            &stats->idle,
+            &stats->iowait,
+            &stats->irq,
+            &stats->softirq,
+            &stats->steal);
+    } else {
+        fclose(fp);
+        return -1;
+    }
+
+    fclose(fp);
+    return 0;
+}
+
+static float get_cpu_usage_percent() {
+    cpu_stats_t stat1, stat2;
+    if(read_cpu_stats(&stat1) != 0) return -1;
+
+    usleep(100000); // 100ms
+    if(read_cpu_stats(&stat2) != 0) return -1;
+
+    unsigned long long idle1 = stat1.idle + stat1.iowait;
+    unsigned long long idle2 = stat2.idle + stat2.iowait;
+
+    unsigned long long total1 = stat1.user + stat1.nice + stat1.system + stat1.idle +
+                                stat1.iowait + stat1.irq + stat1.softirq + stat1.steal;
+    unsigned long long total2 = stat2.user + stat2.nice + stat2.system + stat2.idle +
+                                stat2.iowait + stat2.irq + stat2.softirq + stat2.steal;
+
+    unsigned long long total_delta = total2 - total1;
+    unsigned long long idle_delta  = idle2 - idle1;
+
+    if(total_delta == 0) return 0.0f;
+    return (total_delta - idle_delta) * 100.0f / total_delta;
+}
+
+static void device_attribute_cyc_msg_pub()
+{
+    MQTTClient_message pubmsg = MQTTClient_message_initializer;
+    MQTTClient_deliveryToken token;
+
+    char *ptr;
+    time_t rawtime;
+    u32 tick;
+
+    tick = get_tick_count();
+    if(tick - remote_management_device_attribute_cyc_tick > 300000)    //
+    {
+            char topic_tmp[128];
+            sprintf(topic_tmp,remote_management_device_attribute_topic,get_terminal_id());
+            printf("device_attribute_cyc_msg_topic:%s\n",topic_tmp);
+            if(topic_tmp != NULL)
+            {
+                    cJSON *json_obj = cJSON_CreateObject();
+                    if(json_obj)
+                    {
+                        cJSON *json_obj_params = cJSON_CreateObject();
+                        cJSON *json_obj_sys = cJSON_CreateObject();
+                        if(json_obj_params&&json_obj_sys)
+                        {
+                        	char msg_id_string[32]={0};
+                        	sprintf(msg_id_string,"%u",remote_management_pub_num);
+                            cJSON_AddStringToObject(json_obj, "id", msg_id_string);
+                            cJSON_AddStringToObject(json_obj, "version", remote_management_version);
+                            cJSON_AddStringToObject(json_obj, "sn", get_terminal_id());
+                            cJSON_AddItemToObject(json_obj, "sys", json_obj_sys);
+                            cJSON_AddNumberToObject(json_obj_sys,"ack",0);
+                            time(&rawtime);
+                            cJSON_AddNumberToObject(json_obj,"time",rawtime);
+                            cJSON_AddItemToObject(json_obj, "params", json_obj_params);
+                            char devicetype[32]={0};
+                            get_hw_version("/opt/updata/inf",devicetype);
+                            if(strlen(devicetype)<1)
+                            {
+                                cJSON_Delete(json_obj);
+                                return;
+                            }
+                            char dev_devicetype[32]={0};
+                            sprintf(dev_devicetype,"%s%s","PMF406-",devicetype);
+                            cJSON_AddStringToObject(json_obj_params, "devicetype", dev_devicetype);
+                            char softcrc[32]={0};
+                            get_cal_crc("/opt/updata/inf",softcrc);
+                            if(strlen(softcrc)<1)
+                            {
+                                cJSON_Delete(json_obj);
+                                return;
+                            }
+                            cJSON_AddStringToObject(json_obj_params, "softcrc", softcrc);
+
+                            char softversion[32]={0};
+                            get_version("/opt/updata/inf",softversion);
+                            if(strlen(softversion)<1)
+                            {
+                                cJSON_Delete(json_obj);
+                                return;
+                            }
+                            cJSON_AddStringToObject(json_obj_params, "softversion", softversion);
+                            cJSON_AddNumberToObject(json_obj_params, "appstatus", is_app_running());
+                            cJSON_AddNumberToObject(json_obj_params, "memoryusage", get_memory_usage_percent());
+                            cJSON_AddNumberToObject(json_obj_params, "diskusage", get_disk_usage_percent("/"));
+                            cJSON_AddNumberToObject(json_obj_params, "cpuusage", get_cpu_usage_percent());
+
+                            ptr = cJSON_Print(json_obj);
+                            if(ptr)
+                            {
+                                pubmsg.payload = (void *)ptr;
+                                pubmsg.payloadlen = strlen(pubmsg.payload);
+                                pubmsg.qos = 0;
+                                pubmsg.retained = 0;
+                                if (MQTTClient_publishMessage(remote_management_client, topic_tmp, &pubmsg, &token) != MQTTCLIENT_SUCCESS)
+                                {
+                                	remote_management_online_flag=0;
+                                }
+                                remote_management_pub_num++;
+                                free(ptr);
+                                usleep(10000);
+                            }
+                        }
+                        cJSON_Delete(json_obj);
+                    }
+            }
+        remote_management_device_attribute_cyc_tick = get_tick_count();
+    }
+}
 static void remote_management_ota_progress_handler(const char *service_id, UPDATE_STATUS status, const char *msg)
 {
     printf("into ota_progress handler,service_id:%s,status:%d\n",service_id,status);
