@@ -179,27 +179,34 @@ int http_download_file(const char *url, const char *savePath){
         mkdir(OTA_DOWNLOAD_DIR, 0755);
     }
 
-    // 检查 curl 命令是否存在
-    if (access("/usr/bin/curl", X_OK) != 0 && access("/bin/curl", X_OK) != 0) {
-        printf("Error: curl command not found.\n");
+    // 检查 wget 是否存在
+    if (access("/usr/bin/wget", X_OK) != 0 &&
+        access("/bin/wget", X_OK) != 0 &&
+        access("/usr/sbin/wget", X_OK) != 0 &&
+        access("/sbin/wget", X_OK) != 0) {
+
+        printf("Error: wget command not found.\n");
         return -1;
     }
 
-    // 删除旧文件，防止残留
+    // 删除旧文件
     unlink(savePath);
 
     char cmd[512];
     snprintf(cmd, sizeof(cmd),
-             "curl --fail --silent --show-error -L \"%s\" -o \"%s\"", url, savePath);
+             "wget -q -O \"%s\" \"%s\"",
+             savePath, url);
 
-    printf("Downloading via system: %s\n", cmd);
+    printf("Downloading via wget: %s\n", cmd);
     int ret = system(cmd);
 
+    // wget 返回0表示成功
     if (ret == 0) {
         printf("Download success: %s\n", savePath);
         return 0;
     } else {
         printf("Download failed (code=%d)\n", ret);
+        unlink(savePath); // 删除残留文件
         return -1;
     }
 }

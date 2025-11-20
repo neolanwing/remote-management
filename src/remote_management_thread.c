@@ -56,7 +56,14 @@
 **结构类型定义
 ******************************************************************************/
 typedef struct {
-    unsigned long long user, nice, system, idle, iowait, irq, softirq, steal;
+    unsigned long user;
+    unsigned long nice;
+    unsigned long system;
+    unsigned long idle;
+    unsigned long iowait;
+    unsigned long irq;
+    unsigned long softirq;
+    unsigned long steal;
 } cpu_stats_t;
 /******************************************************************************
 **静态变量定义
@@ -82,47 +89,74 @@ char remote_management_device_ota_upgrade_topic[64]="/ota/device/upgrade/%s";
 extern char *get_terminal_id ( void );
 
 
+static pid_t get_pid_by_name(const char* process_name)
+{
+    DIR* dir;
+    struct dirent* entry;
+    char path[128];
+    FILE* fp;
+    char cmdline[128];
+    pid_t pid;
 
+    dir = opendir("/proc");
+    if (dir == NULL) return -1;
+
+    while ((entry = readdir(dir)) != NULL) {
+        // 过滤非数字目录
+        if (entry->d_type != DT_DIR) continue;
+        if (sscanf(entry->d_name, "%d", &pid) != 1) continue;
+
+        snprintf(path, sizeof(path), "/proc/%d/cmdline", pid);
+        fp = fopen(path, "r");
+        if (fp == NULL) continue;
+
+        if (fgets(cmdline, sizeof(cmdline), fp) != NULL) {
+            // cmdline 可能以 '\0' 分隔，不含空格
+            if (strstr(cmdline, process_name) != NULL) {
+                fclose(fp);
+                closedir(dir);
+                return pid;
+            }
+        }
+        fclose(fp);
+    }
+
+    closedir(dir);
+    return -1;
+}
 static int is_app_running()
 {
-    FILE *fp = popen("pidof app", "r");
-    if (!fp) {
-        return 0;
-    }
+    // 用 /proc 方式搜索 PID
+    pid_t pid = get_pid_by_name("app");
 
-    char buf[64] = {0};
-    int running = 0;
-    int pid = 0;
-
-    if (fgets(buf, sizeof(buf), fp)) {
-        // 有输出表示 app 在运行
-        pid = atoi(buf);
-        running = 1;
-    }
-    pclose(fp);
-
-    if (!running) {
-        // app 不在运行：失败次数 +1
+    if (pid < 0) {  
+        // 没找到: app 不在运行
         g_app_fail_count++;
-    } else {
-        // app 在运行，检查 PID 是否变化
-        if (g_last_app_pid == 0) {
-            // 第一次记录 PID
-            g_last_app_pid = pid;
-        } 
-        else if (pid != g_last_app_pid) {
-            // PID 变化：app 发生了重启
-            g_app_fail_count++;
-            g_last_app_pid = pid; // 保存最新 pid
+
+        if (g_app_fail_count >= 10) {
+            system("reboot -f");
         }
+
+        return 0;   // not running
     }
 
-    // 如果失败次数超过上限
+    // ---- app 找到了 ----
+    if (g_last_app_pid == 0) {
+        // 第一次记录 PID
+        g_last_app_pid = pid;
+    } 
+    else if (pid != g_last_app_pid) {
+        // PID 改变 → app 重启了
+        g_app_fail_count++;  
+        g_last_app_pid = pid;
+    }
+
+    // 超限重启
     if (g_app_fail_count >= 10) {
         system("reboot -f");
     }
 
-    return running;
+    return 1;   // running
 }
 
 static float get_memory_usage_percent() {
@@ -158,49 +192,55 @@ static float get_disk_usage_percent(const char *path) {
     return used * 100.0f / total;
 }
 
+// 读取 /proc/stat 的 cpu 行，兼容字段缺失
 static int read_cpu_stats(cpu_stats_t *stats) {
     FILE *fp = fopen("/proc/stat", "r");
-    if(!fp) return -1;
+    if (!fp) return -1;
 
     char line[256];
-    if(fgets(line, sizeof(line), fp)) {
-        sscanf(line, "cpu  %llu %llu %llu %llu %llu %llu %llu %llu",
-            &stats->user,
-            &stats->nice,
-            &stats->system,
-            &stats->idle,
-            &stats->iowait,
-            &stats->irq,
-            &stats->softirq,
-            &stats->steal);
-    } else {
+    if (!fgets(line, sizeof(line), fp)) {
         fclose(fp);
         return -1;
     }
 
     fclose(fp);
+
+    // 初始化为0
+    stats->user = stats->nice = stats->system = stats->idle = 0;
+    stats->iowait = stats->irq = stats->softirq = stats->steal = 0;
+
+    // 解析最多8个字段，少字段也可
+    int n = sscanf(line, "cpu %lu %lu %lu %lu %lu %lu %lu %lu",
+                   &stats->user, &stats->nice, &stats->system, &stats->idle,
+                   &stats->iowait, &stats->irq, &stats->softirq, &stats->steal);
+
+    if (n < 4) return -1; // 至少要有 user/nice/system/idle
+
     return 0;
 }
 
+// 计算 CPU 使用率百分比
 static float get_cpu_usage_percent() {
     cpu_stats_t stat1, stat2;
-    if(read_cpu_stats(&stat1) != 0) return -1;
+    if (read_cpu_stats(&stat1) != 0) return -1;
 
     usleep(100000); // 100ms
-    if(read_cpu_stats(&stat2) != 0) return -1;
 
-    unsigned long long idle1 = stat1.idle + stat1.iowait;
-    unsigned long long idle2 = stat2.idle + stat2.iowait;
+    if (read_cpu_stats(&stat2) != 0) return -1;
 
-    unsigned long long total1 = stat1.user + stat1.nice + stat1.system + stat1.idle +
-                                stat1.iowait + stat1.irq + stat1.softirq + stat1.steal;
-    unsigned long long total2 = stat2.user + stat2.nice + stat2.system + stat2.idle +
-                                stat2.iowait + stat2.irq + stat2.softirq + stat2.steal;
+    unsigned long idle1 = stat1.idle + stat1.iowait;
+    unsigned long idle2 = stat2.idle + stat2.iowait;
 
-    unsigned long long total_delta = total2 - total1;
-    unsigned long long idle_delta  = idle2 - idle1;
+    unsigned long total1 = stat1.user + stat1.nice + stat1.system + stat1.idle +
+                           stat1.iowait + stat1.irq + stat1.softirq + stat1.steal;
+    unsigned long total2 = stat2.user + stat2.nice + stat2.system + stat2.idle +
+                           stat2.iowait + stat2.irq + stat2.softirq + stat2.steal;
 
-    if(total_delta == 0) return 0.0f;
+    unsigned long total_delta = total2 - total1;
+    unsigned long idle_delta  = idle2 - idle1;
+
+    if (total_delta == 0) return 0.0f;
+
     return (total_delta - idle_delta) * 100.0f / total_delta;
 }
 
