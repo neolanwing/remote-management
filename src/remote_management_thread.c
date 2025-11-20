@@ -65,6 +65,8 @@ static MQTTClient remote_management_client;
 static u8 remote_management_online_flag = 0;
 static u32 remote_management_pub_num = 0;
 static u32 remote_management_device_attribute_cyc_tick = 0;
+static int g_app_fail_count = 0;
+static int g_last_app_pid = 0;
 static volatile MQTTClient_deliveryToken remote_management_deliveredtoken;
 
 //发布主题
@@ -81,94 +83,45 @@ extern char *get_terminal_id ( void );
 
 
 
-static void get_hw_version(const char *xml_file,char *out)
+static int is_app_running()
 {
-    if (!out) return;
-    FILE    *fp = fopen(xml_file, "r");
-    if (!fp) return;
-    mxml_node_t *tree = mxmlLoadFile(NULL, fp, MXML_TEXT_CALLBACK);
-    fclose(fp);
-    if (!tree) return;
-
-
-    mxml_node_t *inf  = mxmlFindElement(tree, tree, "inf",  NULL, NULL, MXML_DESCEND_FIRST);
-    mxml_node_t *comm = mxmlFindElement(inf,  inf,  "comm", NULL, NULL, MXML_DESCEND_FIRST);
-    mxml_node_t *hw   = mxmlFindElement(comm, comm, "Hardware", NULL, NULL, MXML_DESCEND_FIRST);
-
-    const char *ret = NULL;
-    for (mxml_node_t *txt = mxmlGetFirstChild(hw);
-         txt;
-         txt = mxmlGetNextSibling(txt))
-    {
-        if (mxmlGetType(txt) == MXML_TEXT &&
-            mxmlGetText(txt, NULL) != NULL &&
-            mxmlGetText(txt, NULL)[0] != '\n' &&
-            mxmlGetText(txt, NULL)[0] != '\0')
-        {
-            ret = mxmlGetText(txt, NULL);
-            break;
-        }
-    }
-    printf("yjbbh:%s\n",ret);
-    strcpy(out,ret);
-    mxmlDelete(tree);
-}
-
-
-static void get_cal_crc(const char *xml_file,char *out)
-{
-    if (!out) return;
-    FILE *fp = fopen(xml_file, "r");
-    if (!fp) return;
-
-    mxml_node_t *tree = mxmlLoadFile(NULL, fp, MXML_TEXT_CALLBACK);
-    fclose(fp);
-    if (!tree) return;
-
-    mxml_node_t *inf  = mxmlFindElement(tree, tree, "inf",  NULL, NULL, MXML_DESCEND_FIRST);
-    mxml_node_t *comm = mxmlFindElement(inf,  inf,  "comm", NULL, NULL, MXML_DESCEND_FIRST);
-    mxml_node_t *cal  = mxmlFindElement(comm, comm, "CAL",  NULL, NULL, MXML_DESCEND_FIRST);
-
-    const char *ret = cal ? mxmlGetText(cal, NULL) : NULL;
-    strcpy(out,ret);
-    mxmlDelete(tree);
-}
-
-
-static void get_version(const char *xml_file,char *out)
-{
-    if (!out) return;
-    FILE *fp = fopen(xml_file, "r");
-    if (!fp) return;
-
-    mxml_node_t *tree = mxmlLoadFile(NULL, fp, MXML_TEXT_CALLBACK);
-    fclose(fp);
-    if (!tree) return;
-
-    mxml_node_t *inf  = mxmlFindElement(tree, tree, "inf",  NULL, NULL, MXML_DESCEND_FIRST);
-    mxml_node_t *comm = mxmlFindElement(inf,  inf,  "comm", NULL, NULL, MXML_DESCEND_FIRST);
-    mxml_node_t *ver  = mxmlFindElement(comm, comm, "Version", NULL, NULL, MXML_DESCEND_FIRST);
-
-    const char *ret = ver ? mxmlGetText(ver, NULL) : NULL;
-    printf("rjversion:%s\n",ret);
-    strcpy(out,ret);
-    mxmlDelete(tree);
-
-}
-
-static int is_app_running() {
     FILE *fp = popen("pidof app", "r");
-    if (!fp) return 0;
+    if (!fp) {
+        return 0;
+    }
 
-    char buf[64];
+    char buf[64] = {0};
     int running = 0;
+    int pid = 0;
 
-    if(fgets(buf, sizeof(buf), fp)) {
-        // fgets 读到内容表示 pidof 找到了 PID
+    if (fgets(buf, sizeof(buf), fp)) {
+        // 有输出表示 app 在运行
+        pid = atoi(buf);
         running = 1;
     }
-
     pclose(fp);
+
+    if (!running) {
+        // app 不在运行：失败次数 +1
+        g_app_fail_count++;
+    } else {
+        // app 在运行，检查 PID 是否变化
+        if (g_last_app_pid == 0) {
+            // 第一次记录 PID
+            g_last_app_pid = pid;
+        } 
+        else if (pid != g_last_app_pid) {
+            // PID 变化：app 发生了重启
+            g_app_fail_count++;
+            g_last_app_pid = pid; // 保存最新 pid
+        }
+    }
+
+    // 如果失败次数超过上限
+    if (g_app_fail_count >= 10) {
+        system("reboot -f");
+    }
+
     return running;
 }
 
@@ -193,12 +146,12 @@ static float get_memory_usage_percent() {
     return used * 100.0f / mem_total;
 }
 
- static get_disk_usage_percent(const char *path) {
-    struct statvfs buf;
-    if(statvfs(path, &buf) != 0) return -1;
+static float get_disk_usage_percent(const char *path) {
+    struct statfs buf;
+    if(statfs(path, &buf) != 0) return -1;
 
-    unsigned long total = buf.f_blocks * buf.f_frsize;
-    unsigned long free  = buf.f_bfree * buf.f_frsize;
+    unsigned long total = buf.f_blocks * buf.f_bsize;
+    unsigned long free  = buf.f_bfree * buf.f_bsize;
     unsigned long used  = total - free;
 
     if(total == 0) return -1;
@@ -261,7 +214,7 @@ static void device_attribute_cyc_msg_pub()
     u32 tick;
 
     tick = get_tick_count();
-    if(tick - remote_management_device_attribute_cyc_tick > 300000)    //
+    if(tick - remote_management_device_attribute_cyc_tick > 60000)    //
     {
             char topic_tmp[128];
             sprintf(topic_tmp,remote_management_device_attribute_topic,get_terminal_id());
@@ -276,7 +229,7 @@ static void device_attribute_cyc_msg_pub()
                         if(json_obj_params&&json_obj_sys)
                         {
                         	char msg_id_string[32]={0};
-                        	sprintf(msg_id_string,"%u",remote_management_pub_num);
+                        	sprintf(msg_id_string,"ota-%u",remote_management_pub_num);
                             cJSON_AddStringToObject(json_obj, "id", msg_id_string);
                             cJSON_AddStringToObject(json_obj, "version", remote_management_version);
                             cJSON_AddStringToObject(json_obj, "sn", get_terminal_id());
@@ -285,33 +238,6 @@ static void device_attribute_cyc_msg_pub()
                             time(&rawtime);
                             cJSON_AddNumberToObject(json_obj,"time",rawtime);
                             cJSON_AddItemToObject(json_obj, "params", json_obj_params);
-                            char devicetype[32]={0};
-                            get_hw_version("/opt/updata/inf",devicetype);
-                            if(strlen(devicetype)<1)
-                            {
-                                cJSON_Delete(json_obj);
-                                return;
-                            }
-                            char dev_devicetype[32]={0};
-                            sprintf(dev_devicetype,"%s%s","PMF406-",devicetype);
-                            cJSON_AddStringToObject(json_obj_params, "devicetype", dev_devicetype);
-                            char softcrc[32]={0};
-                            get_cal_crc("/opt/updata/inf",softcrc);
-                            if(strlen(softcrc)<1)
-                            {
-                                cJSON_Delete(json_obj);
-                                return;
-                            }
-                            cJSON_AddStringToObject(json_obj_params, "softcrc", softcrc);
-
-                            char softversion[32]={0};
-                            get_version("/opt/updata/inf",softversion);
-                            if(strlen(softversion)<1)
-                            {
-                                cJSON_Delete(json_obj);
-                                return;
-                            }
-                            cJSON_AddStringToObject(json_obj_params, "softversion", softversion);
                             cJSON_AddNumberToObject(json_obj_params, "appstatus", is_app_running());
                             cJSON_AddNumberToObject(json_obj_params, "memoryusage", get_memory_usage_percent());
                             cJSON_AddNumberToObject(json_obj_params, "diskusage", get_disk_usage_percent("/"));
@@ -474,6 +400,8 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
     if (http_download_file(cmd->data.url, zip_path) != 0) {
         remote_management_ota_progress_handler(cmd->id, DOWNLOAD_FAILED, "下载失败");
         goto cleanup;
+    } else {
+        remote_management_ota_progress_handler(cmd->id, 20, "下载成功");
     }
 
     // ---- 步骤 2. 大小校验 ----
@@ -481,6 +409,8 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
     if (downloaded_size == -1 || downloaded_size != cmd->data.size) {
         remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "大小校验失败");
         goto cleanup;
+    } else {
+        remote_management_ota_progress_handler(cmd->id, 30, "大小校验成功");
     }
 
     // ---- 步骤 3. 签名/MD5 校验 ----
@@ -493,6 +423,8 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
     if (strcasecmp(calculated_md5, cmd->data.md5) != 0) {
         remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "MD5字段校验失败");
         goto cleanup;
+    } else {
+        remote_management_ota_progress_handler(cmd->id, 40, "MD5字段校验成功");
     }
 
     // 3.2 Sign 字段比对 (不区分大小写)
@@ -500,6 +432,8 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
         if (strcasecmp(calculated_md5, cmd->data.sign) != 0) {
             remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "SIGN字段md5校验失败");
             goto cleanup;
+        } else {
+            remote_management_ota_progress_handler(cmd->id, 70, "SIGN字段md5校验成功");
         }
     } else if (strcasecmp(cmd->data.signMethod, "sha-1") == 0) {
         if (sha1_file(zip_path, calculated_sha1) != 0) {
@@ -509,7 +443,9 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
         if (strcasecmp(calculated_sha1, cmd->data.sign) != 0) {
             remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "SIGN字段sha-1校验失败");
             goto cleanup;
-        }      
+        } else {
+            remote_management_ota_progress_handler(cmd->id, 70, "SIGN字段sha-1校验成功");
+        }    
     } else if (strcasecmp(cmd->data.signMethod, "sha-256") == 0) {
         if (sha256_file(zip_path, calculated_sha256) != 0) {
             remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "SHA-256签名校验失败");
@@ -518,7 +454,9 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
         if (strcasecmp(calculated_sha256, cmd->data.sign) != 0) {
             remote_management_ota_progress_handler(cmd->id, VERIFY_FAILED, "SIGN字段sha-256校验失败");
             goto cleanup;
-        }      
+        }  else {
+            remote_management_ota_progress_handler(cmd->id, 70, "SIGN字段sha-256校验成功");
+        }   
     }
     // ---- 步骤 4. 文件解压 (强制覆盖到同名目录) ----
     if (unzip_file(zip_path, extract_dir) != 0) {
@@ -605,8 +543,10 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
             if (system(copy_lib_cmd) != 0) {
                 printf("Error: Failed to copy %s to %s\n", entry->d_name, so_target_dir);
                 closedir(dir);
-                remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "烧写失败");
+                remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "lib烧写失败");
                 goto cleanup;
+            } else {
+                remote_management_ota_progress_handler(cmd->id, 90, "lib烧写成功");
             }
 
             // 设置权限
@@ -637,6 +577,8 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
             closedir(dir);
             remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "烧写失败");
             goto cleanup;
+        } else {
+            remote_management_ota_progress_handler(cmd->id, 90, "烧写成功");
         }
 
         // 步骤 6. 权限设置 (设置为可执行 rwxrwxrwx)
@@ -841,6 +783,7 @@ void *remote_management_thread_entry(void *parameter)
             if (status != NULL)
             {
                 // 升级成功，调用 ota_inform 上报成功消息
+                remote_management_ota_progress_handler(status->id, 100, "升级成功");
                 remote_management_ota_inform_handler(status->id, status->version);
                 printf("OTA upgrade success reported for version: %s (ID: %s)\n", status->version, status->id);
 
@@ -852,6 +795,7 @@ void *remote_management_thread_entry(void *parameter)
 
             while (1)
             {
+                device_attribute_cyc_msg_pub();
             	if(remote_management_online_flag==0)
             		break;
                 sleep(1);
