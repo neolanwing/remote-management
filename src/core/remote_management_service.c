@@ -174,7 +174,7 @@ int sha256_file(const char *filePath, char *sha256_out)
 int http_download_file(const char *url, const char *savePath){
     if (!url || !savePath) return -1;
 
-    // 确保下载目录存在
+    // 创建目录(如果不存在)
     if (access(OTA_DOWNLOAD_DIR, F_OK) != 0) {
         mkdir(OTA_DOWNLOAD_DIR, 0755);
     }
@@ -192,12 +192,26 @@ int http_download_file(const char *url, const char *savePath){
     // 删除旧文件
     unlink(savePath);
 
-    char cmd[512];
+    // ----------- 🔥 构造新的 URL（https → http） -----------
+    char fixed_url[512] = {0};
+
+    if (strncmp(url, "https://", 8) == 0) {
+        // 替换为 http://
+        snprintf(fixed_url, sizeof(fixed_url), "http://%s", url + 8);
+    } else {
+        // 若不是 https，原样使用
+        snprintf(fixed_url, sizeof(fixed_url), "%s", url);
+    }
+
+    // -------------------------------------------------------
+
+    char cmd[768];
     snprintf(cmd, sizeof(cmd),
              "wget -q -O \"%s\" \"%s\"",
-             savePath, url);
+             savePath, fixed_url);
 
     printf("Downloading via wget: %s\n", cmd);
+
     int ret = system(cmd);
 
     // wget 返回0表示成功
