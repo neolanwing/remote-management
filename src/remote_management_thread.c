@@ -42,7 +42,6 @@
 ******************************************************************************/
 //#define ADDRESS   "mqtt.xjpmf.cloud:1883"
 #define ADDRESS   "39.105.53.134:1883"
-#define CLIENTID  "otaThread"
 #define TOPIC     "demo/status"
 #define QOS       1
 #define KEEPALIVE 20
@@ -75,6 +74,8 @@ static u32 remote_management_device_attribute_cyc_tick = 0;
 static int g_app_fail_count = 0;
 static int g_last_app_pid = 0;
 static volatile MQTTClient_deliveryToken remote_management_deliveredtoken;
+static char CLIENTID[128]={0};
+
 
 //发布主题
 char remote_management_device_attribute_topic[64]="/sys/%s/iot/post";
@@ -854,6 +855,7 @@ void *remote_management_thread_entry(void *parameter)
 void remote_management_thread_init(void)
 {
     pthread_t remote_management_thread;
+    snprintf(CLIENTID, sizeof(CLIENTID), "%s_ota", get_terminal_id());
     if (pthread_create(&remote_management_thread, NULL, remote_management_thread_entry, NULL) != 0)
     {
         printf("remote_management_thread error\n");
