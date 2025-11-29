@@ -76,6 +76,7 @@ extern "C" {
 typedef struct {
     char version[64];
     char id[32];
+    char ota[32];
 } ota_reboot_status_t;
 // 用于升级指令的结构体
 typedef struct
@@ -130,7 +131,7 @@ REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT long get_file_size(const char *filePath);
 //REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd);
 
 // 升级状态文件操作
-REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int write_ota_reboot_status(const char *version, const char *id);
+REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int write_ota_reboot_status(const char *version, const char *id, const char *ota);
 REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT ota_reboot_status_t *check_ota_finish_status(void);
 REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT void clear_ota_finish_status(void);
 

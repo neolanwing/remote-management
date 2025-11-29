@@ -274,7 +274,7 @@ long get_file_size(const char *filePath) {
 /**
  * @brief 写入重启状态文件 (version 和 id)
  */
-int write_ota_reboot_status(const char *version, const char *id) {
+int write_ota_reboot_status(const char *version, const char *id, const char *ota) {
     char status_path[MAX_PATH_LEN];
     snprintf(status_path, sizeof(status_path), "%s%s", OTA_DOWNLOAD_DIR, OTA_STATUS_FILE);
 
@@ -284,6 +284,7 @@ int write_ota_reboot_status(const char *version, const char *id) {
         // 格式: version\nid
         fprintf(f, "%s\n", version);
         fprintf(f, "%s\n", id);
+        fprintf(f, "%s\n", ota);
         fclose(f);
         return 0;
     }

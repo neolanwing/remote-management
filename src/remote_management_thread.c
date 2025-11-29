@@ -47,6 +47,9 @@
 #define KEEPALIVE 20
 #define remote_management_version  "1.0"
 
+#define OTA_FAIL_COUNT_FILE "/var/lib/ota_fail_count"
+
+
 /******************************************************************************
 **枚举定义
 ******************************************************************************/
@@ -75,6 +78,8 @@ static int g_app_fail_count = 0;
 static int g_last_app_pid = 0;
 static volatile MQTTClient_deliveryToken remote_management_deliveredtoken;
 static char CLIENTID[128]={0};
+static char updated_ota_bin[2] = "0";   // 新增变量，记录是否更新了 ota 程序
+static int ota_updated = 0;
 
 
 //发布主题
@@ -620,6 +625,9 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
             goto cleanup;
         } else {
             remote_management_ota_progress_handler(cmd->id, 90, "烧写成功");
+            if (strcmp(entry->d_name, "remote_management_ota") == 0) {
+                ota_updated = 1;
+            }
         }
 
         // 步骤 6. 权限设置 (设置为可执行 rwxrwxrwx)
@@ -630,9 +638,13 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
         }
     }
     closedir(dir);
-
+    // 判断是否更新过ota程序
+    if (ota_updated) {
+        updated_ota_bin[0] = '1';
+        updated_ota_bin[1] = '\0';
+    }
     // 在重启前，写入版本和ID到 upgrade.txt
-    if (write_ota_reboot_status(cmd->data.version, cmd->id) != 0) {
+    if (write_ota_reboot_status(cmd->data.version, cmd->id, updated_ota_bin) != 0) {
         printf("Warning: Failed to write upgrade.txt status file.\n");
     }
 
@@ -827,7 +839,17 @@ void *remote_management_thread_entry(void *parameter)
                 remote_management_ota_progress_handler(status->id, 100, "升级成功");
                 remote_management_ota_inform_handler(status->id, status->version);
                 printf("OTA upgrade success reported for version: %s (ID: %s)\n", status->version, status->id);
-
+                // 如果升级的文件中包含 OTA 主程序，清空 ota_fail_count
+                if (strcmp(status->ota, "1") == 0) {
+                    FILE *f = fopen(OTA_FAIL_COUNT_FILE, "w");
+                    if (f) {
+                        fprintf(f, "0\n");
+                        fclose(f);
+                        printf("OTA updated: reset ota_fail_count to 0.\n");
+                    } else {
+                        printf("Warning: Failed to reset ota_fail_count file.\n");
+                    }
+                }
                 // 清除标志文件
                 clear_ota_finish_status();
             }
