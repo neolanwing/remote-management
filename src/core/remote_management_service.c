@@ -302,11 +302,13 @@ ota_reboot_status_t *check_ota_finish_status(void) {
 
     FILE *f = fopen(status_path, "r");
     if (f) {
-        if (fgets(status.version, sizeof(status.version), f) != NULL &&
-            fgets(status.id, sizeof(status.id), f) != NULL)
+            if (fgets(status.version, sizeof(status.version), f) != NULL &&
+            fgets(status.id, sizeof(status.id), f) != NULL &&
+            fgets(status.ota, sizeof(status.ota), f) != NULL)
         {
             status.version[strcspn(status.version, "\n")] = 0;
             status.id[strcspn(status.id, "\n")] = 0;
+            status.ota[strcspn(status.ota, "\n")] = 0;
             fclose(f);
             return &status;
         }
