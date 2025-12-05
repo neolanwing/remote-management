@@ -282,7 +282,7 @@ static void device_attribute_cyc_msg_pub()
                             cJSON_AddItemToObject(json_obj, "sys", json_obj_sys);
                             cJSON_AddNumberToObject(json_obj_sys,"ack",0);
                             time(&rawtime);
-                            cJSON_AddNumberToObject(json_obj,"time",rawtime);
+                            cJSON_AddNumberToObject(json_obj,"time", rawtime * 1000);
                             cJSON_AddItemToObject(json_obj, "params", json_obj_params);
                             cJSON_AddNumberToObject(json_obj_params, "appstatus", is_app_running());
                             cJSON_AddNumberToObject(json_obj_params, "memoryusage", get_memory_usage_percent());
