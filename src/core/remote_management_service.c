@@ -267,6 +267,44 @@ long get_file_size(const char *filePath) {
     }
     return -1;
 }
+
+// 判断文件名是否在备份列表中 
+int is_file_in_backup_list(const char *filename) {
+    FILE *fp = fopen(BACKUP_LIST_FILE, "r");
+    if (!fp) return 0; // 默认不备份
+
+    char line[256];
+    while (fgets(line, sizeof(line), fp)) {
+        // 去掉换行符
+        line[strcspn(line, "\r\n")] = 0;
+        if (strcmp(filename, line) == 0) {
+            fclose(fp);
+            return 1;
+        }
+    }
+    fclose(fp);
+    return 0;
+}
+
+// 备份文件到 BACKUP_DIR（不检查是否已存在，直接覆盖） 
+void backup_file_if_needed(const char *file_path, const char *filename) {
+    if (!is_file_in_backup_list(filename)) return;
+
+    // 创建备份目录（如果不存在）
+    struct stat st;
+    if (stat(BACKUP_DIR, &st) != 0) {
+        mkdir(BACKUP_DIR, 0755);
+    }
+
+    char backup_path[512];
+    snprintf(backup_path, sizeof(backup_path), "%s/%s", BACKUP_DIR, filename);
+
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd), "cp -f %s %s", file_path, backup_path);
+    system(cmd); // 直接复制，强制覆盖
+
+    printf("Backed up file %s to %s\n", file_path, backup_path);
+}
 // ----------------------------------------------------------------------
 // OTA 重启状态文件 (upgrade.txt) 操作函数
 // ----------------------------------------------------------------------

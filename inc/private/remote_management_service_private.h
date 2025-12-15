@@ -57,7 +57,9 @@ extern "C" {
 // 目标程序安装目录
 #define OTA_TARGET_DIR          "/usr/pmf406/"
 // so文件安装目录
-#define SO_TARGET_DIR          "/usr/lib/"
+#define SO_TARGET_DIR           "/usr/lib/"
+#define BACKUP_LIST_FILE        "/var/lib/backup_fail"
+#define BACKUP_DIR              "/opt/apps/backup"
 #define MAX_PATH_LEN            256
 #define MAX_MD5_LEN             33  // 32 字符 + '\0'
 #define MAX_SHA1_LEN            41  // 40 字符 + '\0'
@@ -126,6 +128,12 @@ REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int unzip_file(const char *zipPath, const c
 
 // 获取文件大小 (POSIX stat 实现)
 REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT long get_file_size(const char *filePath);
+
+// 判断文件名是否在备份列表中 
+REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int is_file_in_backup_list(const char *filename)
+
+// 备份文件到 BACKUP_DIR（不检查是否已存在，直接覆盖） 
+REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT void backup_file_if_needed(const char *file_path, const char *filename)
 
 // OTA 升级核心处理函数
 //REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd);

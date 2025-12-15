@@ -48,6 +48,8 @@
 #define remote_management_version  "1.0"
 
 #define OTA_FAIL_COUNT_FILE "/var/lib/ota_fail_count"
+#define APP_FAIL_COUNT_FILE "/var/lib/app_fail_count"
+
 
 
 /******************************************************************************
@@ -75,6 +77,7 @@ static u8 remote_management_online_flag = 0;
 static u32 remote_management_pub_num = 0;
 static u32 remote_management_device_attribute_cyc_tick = 0;
 static int g_app_fail_count = 0;
+static int g_pid_no_change_count = 0;
 static int g_last_app_pid = 0;
 static volatile MQTTClient_deliveryToken remote_management_deliveredtoken;
 static char CLIENTID[128]={0};
@@ -94,6 +97,56 @@ char remote_management_device_ota_upgrade_topic[64]="/ota/device/upgrade/%s";
 ******************************************************************************/
 extern char *get_terminal_id ( void );
 
+static int read_persist_fail_count(void)
+{
+    FILE *fp = fopen(APP_FAIL_COUNT_FILE, "r");
+    int count = 0;
+
+    if (fp) {
+        if (fscanf(fp, "%d", &count) != 1 || count < 0) {
+            count = 0;
+        }
+        fclose(fp);
+    }
+    return count;
+}
+static void write_persist_fail_count(int count)
+{
+    FILE *fp = fopen(APP_FAIL_COUNT_FILE, "w");
+    if (fp) {
+        fprintf(fp, "%d\n", count);
+        fclose(fp);
+    }
+}
+static void rollback_app_files(void)
+{
+    system("cp -rf /opt/apps/backup/* /usr/pmf406/");
+}
+static void rollback_and_reboot(void)
+{
+    int reboot_count;
+
+    /* 1. 读取当前重启次数 */
+    reboot_count = read_persist_fail_count();
+
+    /* 2. 累加并写回 */
+    reboot_count++;
+    write_persist_fail_count(reboot_count);
+
+    /* 3. 重新读取，确认写入成功 */
+    reboot_count = read_persist_fail_count();
+
+    /* 4. 达到阈值，执行回滚 */
+    if (reboot_count >= 3) {
+        rollback_app_files();
+
+        /* ★ 关键：回滚完成后立刻清零 */
+        write_persist_fail_count(0);
+    }
+    sync();
+    /* 5. 立刻重启 */
+    system("reboot -f");
+}
 
 static pid_t get_pid_by_name(const char* process_name)
 {
@@ -135,31 +188,43 @@ static int is_app_running()
     // 用 /proc 方式搜索 PID
     pid_t pid = get_pid_by_name("app");
 
-    if (pid < 0) {  
-        // 没找到: app 不在运行
+     /* ---------- app 未运行 ---------- */
+    if (pid < 0) {
         g_app_fail_count++;
 
         if (g_app_fail_count >= 10) {
-            system("reboot -f");
+            rollback_and_reboot();
+            return 0;   // ★ 明确终止
         }
-
-        return 0;   // not running
+        return 0;
     }
 
     // ---- app 找到了 ----
     if (g_last_app_pid == 0) {
         // 第一次记录 PID
         g_last_app_pid = pid;
+        g_pid_no_change_count = 0;
     } 
     else if (pid != g_last_app_pid) {
         // PID 改变 → app 重启了
-        g_app_fail_count++;  
+        g_app_fail_count++;
         g_last_app_pid = pid;
+        g_pid_no_change_count = 0;
+    }
+    else {
+        /* PID 未变化 */
+        g_pid_no_change_count++;
+
+        if (g_pid_no_change_count >= 50) {
+            g_app_fail_count = 0;
+            write_persist_fail_count(0);
+            g_pid_no_change_count = 0;
+        }
     }
 
     // 超限重启
     if (g_app_fail_count >= 10) {
-        system("reboot -f");
+        rollback_and_reboot();
     }
 
     return 1;   // running
@@ -606,6 +671,9 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
         char old_target_path[MAX_PATH_LEN];
         char new_source_path[MAX_PATH_LEN];
         char copy_cmd[MAX_PATH_LEN * 2];
+
+        // 5.1 备份文件
+        backup_file_if_needed(old_target_path, entry->d_name);
 
         // 5.2 删除 /usr/pmf406/ 目录下同名旧文件
         snprintf(old_target_path, sizeof(old_target_path), "%s%s", target_dir, entry->d_name);
