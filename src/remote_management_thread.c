@@ -154,32 +154,48 @@ static pid_t get_pid_by_name(const char* process_name)
     struct dirent* entry;
     char path[128];
     FILE* fp;
-    char cmdline[128];
-    pid_t pid;
+    char cmdline[256];  // 增大缓冲区
+    pid_t pid = -1;
+    size_t process_name_len = strlen(process_name);
 
     dir = opendir("/proc");
-    if (dir == NULL) return -1;
-
-    while ((entry = readdir(dir)) != NULL) {
-        // 过滤非数字目录
-        if (entry->d_type != DT_DIR) continue;
-        if (sscanf(entry->d_name, "%d", &pid) != 1) continue;
-
-        snprintf(path, sizeof(path), "/proc/%d/cmdline", pid);
-        fp = fopen(path, "r");
-        if (fp == NULL) continue;
-
-        if (fgets(cmdline, sizeof(cmdline), fp) != NULL) {
-            // cmdline 可能以 '\0' 分隔，不含空格
-            if (strstr(cmdline, process_name) != NULL) {
-                fclose(fp);
-                closedir(dir);
-                return pid;
-            }
-        }
-        fclose(fp);
+    if (dir == NULL) {
+        perror("opendir");
+        return -1;
     }
 
+    // 获取当前进程PID，用于排除自身
+    pid_t self_pid = getpid();
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_type == DT_DIR) {
+            if (sscanf(entry->d_name, "%d", &pid) == 1) {
+                // 跳过当前进程自身
+                if (pid == self_pid) continue;
+
+                snprintf(path, sizeof(path), "/proc/%d/cmdline", pid);
+                fp = fopen(path, "r");
+                if (fp != NULL) {
+                    size_t n = fread(cmdline, 1, sizeof(cmdline)-1, fp);
+                    if (n > 0) {
+                        cmdline[n] = '\0';
+                        // cmdline可能包含\0分隔的参数，取第一个参数
+                        char* base_name = strrchr(cmdline, '/');
+                        base_name = base_name ? base_name + 1 : cmdline;
+
+                        // 精确匹配进程名（非子串匹配）
+                        if (strcmp(base_name, process_name) == 0) {
+                            //printf("PID of process '%s': %d\n", process_name, pid);
+                            fclose(fp);
+                            closedir(dir);
+                            return pid;
+                        }
+                    }
+                    fclose(fp);
+                }
+            }
+        }
+    }
     closedir(dir);
     return -1;
 }
