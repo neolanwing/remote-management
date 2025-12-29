@@ -207,7 +207,7 @@ int http_download_file(const char *url, const char *savePath){
 
     char cmd[768];
     snprintf(cmd, sizeof(cmd),
-             "wget -q -O \"%s\" \"%s\"",
+             "wr wget -q -O \"%s\" \"%s\"",
              savePath, fixed_url);
 
     printf("Downloading via wget: %s\n", cmd);
@@ -231,7 +231,7 @@ int unzip_file(const char *zipPath, const char *destDir) {
 
     // 1. 如果解压目录存在，先删除
     if (access(destDir, F_OK) == 0) {
-        snprintf(cmd, sizeof(cmd), "rm -rf %s", destDir);
+        snprintf(cmd, sizeof(cmd), "wr rm -rf %s", destDir);
         ret = system(cmd);
         if (ret != 0) {
             printf("Error: Failed to remove existing directory %s\n", destDir);
@@ -246,7 +246,7 @@ int unzip_file(const char *zipPath, const char *destDir) {
     }
 
     // 2. 使用 unzip -o 强制覆盖解压到指定目录
-    snprintf(cmd, sizeof(cmd), "unzip -o %s -d %s", zipPath, destDir);
+    snprintf(cmd, sizeof(cmd), "wr unzip -o %s -d %s", zipPath, destDir);
 
     printf("Executing unzip command: %s (Forced Overwrite)\n", cmd);
 
@@ -300,7 +300,7 @@ void backup_file_if_needed(const char *file_path, const char *filename) {
     snprintf(backup_path, sizeof(backup_path), "%s/%s", BACKUP_DIR, filename);
 
     char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "cp -f %s %s", file_path, backup_path);
+    snprintf(cmd, sizeof(cmd), "wr cp -f %s %s", file_path, backup_path);
     system(cmd); // 直接复制，强制覆盖
 
     printf("Backed up file %s to %s\n", file_path, backup_path);

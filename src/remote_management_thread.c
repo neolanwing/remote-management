@@ -120,7 +120,7 @@ static void write_persist_fail_count(int count)
 }
 static void rollback_app_files(void)
 {
-    system("cp -rf /opt/apps/backup/* /usr/pmf406/");
+    system("wr cp -rf /opt/apps/backup/* /usr/pmf406/");
 }
 static void rollback_and_reboot(void)
 {
@@ -661,12 +661,14 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
 
             // 删除旧的 .so
             if (access(old_lib_path, F_OK) == 0) {
-                printf("Deleting old file: %s\n", old_lib_path);
-                remove(old_lib_path);
+                char cmd[512];
+                snprintf(cmd, sizeof(cmd), "wr rm -rf '%s'", old_lib_path);
+                printf("Force deleting old .sotarget: %s\n", old_lib_path);
+                system(cmd);
             }
 
             // 复制新的 .so 文件到 /usr/lib/
-            snprintf(copy_lib_cmd, sizeof(copy_lib_cmd), "cp -f %s %s", new_lib_path, so_target_dir);
+            snprintf(copy_lib_cmd, sizeof(copy_lib_cmd), "wr cp -f %s %s", new_lib_path, so_target_dir);
             if (system(copy_lib_cmd) != 0) {
                 printf("Error: Failed to copy %s to %s\n", entry->d_name, so_target_dir);
                 closedir(dir);
@@ -676,10 +678,16 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
                 remote_management_ota_progress_handler(cmd->id, 90, "lib烧写成功");
             }
 
-            // 设置权限
+            // 1. 设置权限
             char final_lib_path[MAX_PATH_LEN];
             snprintf(final_lib_path, sizeof(final_lib_path), "%s%s", so_target_dir, entry->d_name);
-            chmod(final_lib_path, S_IRWXU | S_IRWXG | S_IRWXO);
+
+            // 2. 构造 wr chmod 命令
+            char chmod_so_cmd[512];
+            snprintf(chmod_so_cmd, sizeof(chmod_so_cmd), "wr chmod 777 '%s'", final_lib_path);
+
+            // 3. 执行命令
+            int ret = system(chmod_so_cmd);
 
             continue; // 直接跳过 /usr/pmf406/ 的逻辑
         }
@@ -694,15 +702,17 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
         // 5.2 删除 /usr/pmf406/ 目录下同名旧文件
         snprintf(old_target_path, sizeof(old_target_path), "%s%s", target_dir, entry->d_name);
         if (access(old_target_path, F_OK) == 0) {
-            printf("Deleting old file: %s\n", old_target_path);
-            remove(old_target_path); // 允许删除失败，但最好记录
+            char cmd[512];
+            snprintf(cmd, sizeof(cmd), "wr rm -rf '%s'", old_target_path);
+            printf("Force deleting old target: %s\n", old_target_path);
+            system(cmd);
         }
 
         // 5.3 复制新文件到 /usr/pmf406/ (强制覆盖)
         snprintf(new_source_path, sizeof(new_source_path), "%s%s", extract_dir, entry->d_name);
 
         // 使用 cp -f 强制覆盖复制
-        snprintf(copy_cmd, sizeof(copy_cmd), "cp -f %s %s", new_source_path, target_dir);
+        snprintf(copy_cmd, sizeof(copy_cmd), "wr cp -f %s %s", new_source_path, target_dir);
         if (system(copy_cmd) != 0) {
             closedir(dir);
             remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "烧写失败");
@@ -717,8 +727,14 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
         // 步骤 6. 权限设置 (设置为可执行 rwxrwxrwx)
         char final_target_path[MAX_PATH_LEN];
         snprintf(final_target_path, sizeof(final_target_path), "%s%s", target_dir, entry->d_name);
-        if (chmod(final_target_path, S_IRWXU | S_IRWXG | S_IRWXO) != 0) {
-            printf("Warning: Failed to set executable permission for %s\n", final_target_path);
+        // 2. 构造 wr chmod 命令
+        char chmod_cmd[512];
+        snprintf(chmod_cmd, sizeof(chmod_cmd), "wr chmod 777 '%s'", final_target_path);
+
+        // 执行命令并检查返回值
+        int ret = system(chmod_cmd);
+        if (ret != 0) {
+            fprintf(stderr, "wr chmod failed for %s, ret=%d\n", final_target_path, ret);
         }
     }
     closedir(dir);
