@@ -163,13 +163,13 @@ static int rollback_app_files(void)
 
         /* 1️⃣ 删除运行目录中的同名文件（存在才删） */
         snprintf(cmd, sizeof(cmd),
-                 "wr rm -f '%s'", dst);
-        system(cmd);
+                 "rm -f '%s'", dst);
+        exec_cmd_auto_wr(cmd);
 
-        /* 2️⃣ 复制 backup -> run */
+        /* 2️⃣ 复制 backup -> run */   
         snprintf(cmd, sizeof(cmd),
-                 "wr cp '%s' '%s'", src, dst);
-        if (system(cmd) != 0) {
+                 "cp '%s' '%s'", src, dst);
+        if (exec_cmd_auto_wr(cmd) != 0) {
             fprintf(stderr,
                     "[ROLLBACK] copy failed: %s\n",
                     ent->d_name);
@@ -178,8 +178,8 @@ static int rollback_app_files(void)
 
         /* 3️⃣ 设置为可执行 */
         snprintf(cmd, sizeof(cmd),
-                 "wr chmod +x '%s'", dst);
-        if (system(cmd) != 0) {
+                 "chmod +x '%s'", dst);
+        if (exec_cmd_auto_wr(cmd) != 0) {
             fprintf(stderr,
                     "[ROLLBACK] chmod failed: %s\n",
                     ent->d_name);
@@ -730,14 +730,14 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
             // 删除旧的 .so
             if (access(old_lib_path, F_OK) == 0) {
                 char cmd[512];
-                snprintf(cmd, sizeof(cmd), "wr rm -rf '%s'", old_lib_path);
+                snprintf(cmd, sizeof(cmd), "rm -rf '%s'", old_lib_path);
                 printf("Force deleting old .sotarget: %s\n", old_lib_path);
-                system(cmd);
+                exec_cmd_auto_wr(cmd);
             }
 
             // 复制新的 .so 文件到 /usr/lib/
-            snprintf(copy_lib_cmd, sizeof(copy_lib_cmd), "wr cp -f %s %s", new_lib_path, so_target_dir);
-            if (system(copy_lib_cmd) != 0) {
+            snprintf(copy_lib_cmd, sizeof(copy_lib_cmd), "cp -f %s %s", new_lib_path, so_target_dir);
+            if (exec_cmd_auto_wr(copy_lib_cmd) != 0) {
                 printf("Error: Failed to copy %s to %s\n", entry->d_name, so_target_dir);
                 closedir(dir);
                 remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "lib烧写失败");
@@ -750,12 +750,12 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
             char final_lib_path[MAX_PATH_LEN];
             snprintf(final_lib_path, sizeof(final_lib_path), "%s%s", so_target_dir, entry->d_name);
 
-            // 2. 构造 wr chmod 命令
+            // 2. 构造 chmod 命令
             char chmod_so_cmd[512];
-            snprintf(chmod_so_cmd, sizeof(chmod_so_cmd), "wr chmod 777 '%s'", final_lib_path);
+            snprintf(chmod_so_cmd, sizeof(chmod_so_cmd), "chmod 777 '%s'", final_lib_path);
 
             // 3. 执行命令
-            int ret = system(chmod_so_cmd);
+            exec_cmd_auto_wr(chmod_so_cmd);
 
             continue; // 直接跳过 /usr/pmf406/ 的逻辑
         }
@@ -771,17 +771,17 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
         snprintf(old_target_path, sizeof(old_target_path), "%s%s", target_dir, entry->d_name);
         if (access(old_target_path, F_OK) == 0) {
             char cmd[512];
-            snprintf(cmd, sizeof(cmd), "wr rm -rf '%s'", old_target_path);
+            snprintf(cmd, sizeof(cmd), "rm -rf '%s'", old_target_path);
             printf("Force deleting old target: %s\n", old_target_path);
-            system(cmd);
+            exec_cmd_auto_wr(cmd);
         }
 
         // 5.3 复制新文件到 /usr/pmf406/ (强制覆盖)
         snprintf(new_source_path, sizeof(new_source_path), "%s%s", extract_dir, entry->d_name);
 
         // 使用 cp -f 强制覆盖复制
-        snprintf(copy_cmd, sizeof(copy_cmd), "wr cp -f %s %s", new_source_path, target_dir);
-        if (system(copy_cmd) != 0) {
+        snprintf(copy_cmd, sizeof(copy_cmd), "cp -f %s %s", new_source_path, target_dir);
+        if (exec_cmd_auto_wr(copy_cmd) != 0) {
             closedir(dir);
             remote_management_ota_progress_handler(cmd->id, FLASH_FAILED, "烧写失败");
             goto cleanup;
@@ -795,14 +795,14 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
         // 步骤 6. 权限设置 (设置为可执行 rwxrwxrwx)
         char final_target_path[MAX_PATH_LEN];
         snprintf(final_target_path, sizeof(final_target_path), "%s%s", target_dir, entry->d_name);
-        // 2. 构造 wr chmod 命令
+        // 2. 构造 chmod 命令
         char chmod_cmd[512];
-        snprintf(chmod_cmd, sizeof(chmod_cmd), "wr chmod 777 '%s'", final_target_path);
+        snprintf(chmod_cmd, sizeof(chmod_cmd), "chmod 777 '%s'", final_target_path);
 
         // 执行命令并检查返回值
-        int ret = system(chmod_cmd);
+        int ret = exec_cmd_auto_wr(chmod_cmd);
         if (ret != 0) {
-            fprintf(stderr, "wr chmod failed for %s, ret=%d\n", final_target_path, ret);
+            fprintf(stderr, "chmod failed for %s, ret=%d\n", final_target_path, ret);
         }
     }
     closedir(dir);

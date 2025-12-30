@@ -68,6 +68,44 @@
 /*
 ** OTA升级相关函数实现
 */
+int g_has_wr = -1;
+// 判断系统是否存在wr命令
+void detect_wr_once(void)
+{
+    if (g_has_wr != -1)
+        return;
+
+    if (access("/usr/bin/wr", X_OK) == 0 ||
+        access("/bin/wr", X_OK) == 0) {
+        g_has_wr = 1;
+    } else {
+        g_has_wr = 0;
+    }
+}
+
+// 判断是否应该使用wr命令
+int exec_cmd_auto_wr(const char *cmd)
+{
+    int ret;
+
+    detect_wr_once();
+
+    /* 先尝试直接执行 */
+    ret = system(cmd);
+    if (ret == 0)
+        return 0;
+
+    /* 失败 & 支持 wr → retry */
+    if (g_has_wr) {
+        char buf[1024];
+        snprintf(buf, sizeof(buf), "wr %s", cmd);
+        printf("[AUTO_WR] retry: %s\n", buf);
+        return system(buf);
+    }
+
+    return ret;
+}
+
 // MD5 文件计算函数 (OpenSSL 实现)
 int md5_file(const char *filePath, char *md5_out)
 {
@@ -207,12 +245,12 @@ int http_download_file(const char *url, const char *savePath){
 
     char cmd[768];
     snprintf(cmd, sizeof(cmd),
-             "wr wget -q -O \"%s\" \"%s\"",
+             "wget -q -O \"%s\" \"%s\"",
              savePath, fixed_url);
 
     printf("Downloading via wget: %s\n", cmd);
 
-    int ret = system(cmd);
+    int ret = exec_cmd_auto_wr(cmd);
 
     // wget 返回0表示成功
     if (ret == 0) {
@@ -231,8 +269,8 @@ int unzip_file(const char *zipPath, const char *destDir) {
 
     // 1. 如果解压目录存在，先删除
     if (access(destDir, F_OK) == 0) {
-        snprintf(cmd, sizeof(cmd), "wr rm -rf %s", destDir);
-        ret = system(cmd);
+        snprintf(cmd, sizeof(cmd), "rm -rf %s", destDir);
+        ret = exec_cmd_auto_wr(cmd);
         if (ret != 0) {
             printf("Error: Failed to remove existing directory %s\n", destDir);
             return -1;
@@ -246,11 +284,11 @@ int unzip_file(const char *zipPath, const char *destDir) {
     }
 
     // 2. 使用 unzip -o 强制覆盖解压到指定目录
-    snprintf(cmd, sizeof(cmd), "wr unzip -o %s -d %s", zipPath, destDir);
+    snprintf(cmd, sizeof(cmd), "unzip -o %s -d %s", zipPath, destDir);
 
     printf("Executing unzip command: %s (Forced Overwrite)\n", cmd);
 
-    ret = system(cmd);
+    ret = exec_cmd_auto_wr(cmd);
 
     if (ret != 0) {
         printf("Error: Unzip of %s failed, system returned %d.\n", zipPath, ret);
@@ -300,8 +338,8 @@ void backup_file_if_needed(const char *file_path, const char *filename) {
     snprintf(backup_path, sizeof(backup_path), "%s/%s", BACKUP_DIR, filename);
 
     char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "wr cp -f %s %s", file_path, backup_path);
-    system(cmd); // 直接复制，强制覆盖
+    snprintf(cmd, sizeof(cmd), "cp -f %s %s", file_path, backup_path);
+    exec_cmd_auto_wr(cmd); // 直接复制，强制覆盖
 
     printf("Backed up file %s to %s\n", file_path, backup_path);
 }
