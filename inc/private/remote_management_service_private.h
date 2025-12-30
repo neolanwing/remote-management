@@ -58,7 +58,7 @@ extern "C" {
 #define OTA_TARGET_DIR          "/usr/pmf406/"
 // so文件安装目录
 #define SO_TARGET_DIR           "/usr/lib/"
-#define BACKUP_LIST_FILE        "/var/lib/backup_file"
+#define BACKUP_LIST_FILE        "/opt/files/backup_file"
 #define BACKUP_DIR              "/opt/apps/backup"
 #define MAX_PATH_LEN            256
 #define MAX_MD5_LEN             33  // 32 字符 + '\0'

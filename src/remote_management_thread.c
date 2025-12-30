@@ -47,8 +47,10 @@
 #define KEEPALIVE 20
 #define remote_management_version  "1.0"
 
-#define OTA_FAIL_COUNT_FILE "/var/lib/ota_fail_count"
-#define APP_FAIL_COUNT_FILE "/var/lib/app_fail_count"
+#define OTA_FAIL_COUNT_FILE "/opt/files/ota_fail_count"
+#define APP_FAIL_COUNT_FILE "/opt/files/app_fail_count"
+#define BACKUP_DIR "/opt/apps/backup"
+#define RUN_DIR    "/usr/pmf406"
 
 
 
@@ -118,10 +120,76 @@ static void write_persist_fail_count(int count)
         fclose(fp);
     }
 }
-static void rollback_app_files(void)
+#include <dirent.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <stdlib.h>
+
+#define BACKUP_DIR "/opt/apps/backup"
+#define RUN_DIR    "/usr/pmf406"
+
+static int rollback_app_files(void)
 {
-    system("wr cp -rf /opt/apps/backup/* /usr/pmf406/");
+    DIR *dir;
+    struct dirent *ent;
+    char src[512];
+    char dst[512];
+    char cmd[1024];
+    struct stat st;
+
+    dir = opendir(BACKUP_DIR);
+    if (!dir) {
+        perror("opendir backup");
+        return -1;
+    }
+
+    while ((ent = readdir(dir)) != NULL) {
+
+        /* 跳过 . 和 .. */
+        if (strcmp(ent->d_name, ".") == 0 ||
+            strcmp(ent->d_name, "..") == 0)
+            continue;
+
+        snprintf(src, sizeof(src), "%s/%s", BACKUP_DIR, ent->d_name);
+        snprintf(dst, sizeof(dst), "%s/%s", RUN_DIR, ent->d_name);
+
+        /* 只处理普通文件 */
+        if (stat(src, &st) != 0)
+            continue;
+
+        if (!S_ISREG(st.st_mode))
+            continue;
+
+        /* 1️⃣ 删除运行目录中的同名文件（存在才删） */
+        snprintf(cmd, sizeof(cmd),
+                 "wr rm -f '%s'", dst);
+        system(cmd);
+
+        /* 2️⃣ 复制 backup -> run */
+        snprintf(cmd, sizeof(cmd),
+                 "wr cp '%s' '%s'", src, dst);
+        if (system(cmd) != 0) {
+            fprintf(stderr,
+                    "[ROLLBACK] copy failed: %s\n",
+                    ent->d_name);
+            continue;
+        }
+
+        /* 3️⃣ 设置为可执行 */
+        snprintf(cmd, sizeof(cmd),
+                 "wr chmod +x '%s'", dst);
+        if (system(cmd) != 0) {
+            fprintf(stderr,
+                    "[ROLLBACK] chmod failed: %s\n",
+                    ent->d_name);
+        }
+    }
+
+    closedir(dir);
+    return 0;
 }
+
 static void rollback_and_reboot(void)
 {
     int reboot_count;
