@@ -68,42 +68,29 @@
 /*
 ** OTA升级相关函数实现
 */
-int g_has_wr = -1;
-// 判断系统是否存在wr命令
-void detect_wr_once(void)
+//  判断是否成功
+int system_ok(int status)
 {
-    if (g_has_wr != -1)
-        return;
-
-    if (access("/usr/bin/wr", X_OK) == 0 ||
-        access("/bin/wr", X_OK) == 0) {
-        g_has_wr = 1;
-    } else {
-        g_has_wr = 0;
-    }
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
-
 // 判断是否应该使用wr命令
 int exec_cmd_auto_wr(const char *cmd)
 {
-    int ret;
+    int status;
+    char buf[1024];
 
-    detect_wr_once();
-
-    /* 先尝试直接执行 */
-    ret = system(cmd);
-    if (ret == 0)
+    status = system(cmd);
+    if (system_ok(status))
         return 0;
 
-    /* 失败 & 支持 wr → retry */
-    if (g_has_wr) {
-        char buf[1024];
-        snprintf(buf, sizeof(buf), "wr %s", cmd);
-        printf("[AUTO_WR] retry: %s\n", buf);
-        return system(buf);
-    }
+    snprintf(buf, sizeof(buf), "wr %s", cmd);
+    printf("[AUTO_WR] fallback: %s\n", buf);
 
-    return ret;
+    status = system(buf);
+    if (system_ok(status))
+        return 0;
+
+    return -1;
 }
 
 // MD5 文件计算函数 (OpenSSL 实现)
@@ -250,17 +237,21 @@ int http_download_file(const char *url, const char *savePath){
 
     printf("Downloading via wget: %s\n", cmd);
 
-    int ret = exec_cmd_auto_wr(cmd);
+    // ⚠️ 不再信任返回值，只负责执行
+    exec_cmd_auto_wr(cmd);
 
-    // wget 返回0表示成功
-    if (ret == 0) {
-        printf("Download success: %s\n", savePath);
+    // ---------- 🔒 结果校验（关键） ----------
+    struct stat st;
+    if (stat(savePath, &st) == 0 && st.st_size > 0) {
+        printf("Download success: %s (size=%ld)\n",
+               savePath, (long)st.st_size);
         return 0;
-    } else {
-        printf("Download failed (code=%d)\n", ret);
-        unlink(savePath); // 删除残留文件
-        return -1;
     }
+
+    // 校验失败
+    printf("Download failed: file not valid\n");
+    unlink(savePath);
+    return -1;
 }
 // ZIP 解压函数 (使用 system/unzip 实现强制覆盖到指定目录)
 int unzip_file(const char *zipPath, const char *destDir) {
@@ -325,24 +316,41 @@ int is_file_in_backup_list(const char *filename) {
 }
 
 // 备份文件到 BACKUP_DIR（不检查是否已存在，直接覆盖） 
-void backup_file_if_needed(const char *file_path, const char *filename) {
-    if (!is_file_in_backup_list(filename)) return;
-
-    // 创建备份目录（如果不存在）
+void backup_file_if_needed(const char *file_path)
+{
     struct stat st;
-    if (stat(BACKUP_DIR, &st) != 0) {
-        mkdir(BACKUP_DIR, 0755);
+    if (stat(file_path, &st) != 0 || !S_ISREG(st.st_mode)) {
+        printf("[SKIP] not a regular file: %s\n", file_path);
+        return;
+    }
+
+    const char *filename = strrchr(file_path, '/');
+    filename = filename ? filename + 1 : file_path;
+
+    if (!is_file_in_backup_list(filename))
+        return;
+
+    if (mkdir(BACKUP_DIR, 0755) != 0 && errno != EEXIST) {
+        printf("[ERROR] mkdir failed: %s\n", BACKUP_DIR);
+        return;
     }
 
     char backup_path[512];
-    snprintf(backup_path, sizeof(backup_path), "%s/%s", BACKUP_DIR, filename);
+    snprintf(backup_path, sizeof(backup_path),
+             "%s/%s", BACKUP_DIR, filename);
 
     char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "cp -f %s %s", file_path, backup_path);
-    exec_cmd_auto_wr(cmd); // 直接复制，强制覆盖
+    snprintf(cmd, sizeof(cmd),
+             "cp -f \"%s\" \"%s\"", file_path, backup_path);
 
-    printf("Backed up file %s to %s\n", file_path, backup_path);
+    if (exec_cmd_auto_wr(cmd) == 0) {
+        printf("[BACKUP] %s -> %s\n", file_path, backup_path);
+    } else {
+        printf("[ERROR] backup failed: %s\n", file_path);
+    }
 }
+
+
 // ----------------------------------------------------------------------
 // OTA 重启状态文件 (upgrade.txt) 操作函数
 // ----------------------------------------------------------------------

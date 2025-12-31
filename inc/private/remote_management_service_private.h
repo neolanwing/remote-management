@@ -109,8 +109,6 @@ typedef enum
 **全局变量定义
 ******************************************************************************/
 extern volatile int g_ota_service_running;
-/* 是否存在 wr */
-extern int g_has_wr;
 /******************************************************************************
 **API函数实现
 ******************************************************************************/
@@ -135,13 +133,13 @@ REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT long get_file_size(const char *filePath);
 REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int is_file_in_backup_list(const char *filename);
 
 // 备份文件到 BACKUP_DIR（不检查是否已存在，直接覆盖） 
-REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT void backup_file_if_needed(const char *file_path, const char *filename);
-
-// 判断系统是否存在wr命令
-REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT void detect_wr_once(void);
+REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT void backup_file_if_needed(const char *file_path);
 
 // 判断是否应该使用wr命令
 REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int exec_cmd_auto_wr(const char *cmd);
+
+// 判断system是否执行成功
+REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int system_ok(int status);
 
 // OTA 升级核心处理函数
 //REMOTE_MANAGEMENT_SEVICE_PRIVATE_EXT int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd);

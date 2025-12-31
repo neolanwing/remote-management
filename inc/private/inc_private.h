@@ -43,6 +43,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/statfs.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <errno.h>
 #include <libgen.h>

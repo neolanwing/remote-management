@@ -764,11 +764,13 @@ static int ota_upgrade_handler(const ota_upgrade_cmd_t *cmd)
         char new_source_path[MAX_PATH_LEN];
         char copy_cmd[MAX_PATH_LEN * 2];
 
-        // 5.1 备份文件
-        backup_file_if_needed(old_target_path, entry->d_name);
 
-        // 5.2 删除 /usr/pmf406/ 目录下同名旧文件
+        // 5.1 删除 /usr/pmf406/ 目录下同名旧文件
         snprintf(old_target_path, sizeof(old_target_path), "%s%s", target_dir, entry->d_name);
+
+        /* 5.2 备份旧文件（只传一个参数） */
+        backup_file_if_needed(old_target_path);
+
         if (access(old_target_path, F_OK) == 0) {
             char cmd[512];
             snprintf(cmd, sizeof(cmd), "rm -rf '%s'", old_target_path);
