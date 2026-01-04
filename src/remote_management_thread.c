@@ -120,15 +120,6 @@ static void write_persist_fail_count(int count)
         fclose(fp);
     }
 }
-#include <dirent.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/stat.h>
-#include <stdlib.h>
-
-#define BACKUP_DIR "/opt/apps/backup"
-#define RUN_DIR    "/usr/pmf406"
-
 static int rollback_app_files(void)
 {
     DIR *dir;
@@ -862,7 +853,7 @@ static int mqtt_connect(MQTTClient *client)
     MQTTClient_connectOptions conn_opts = MQTTClient_connectOptions_initializer;
     conn_opts.keepAliveInterval = 60;
     conn_opts.cleansession = 1;
-    conn_opts.MQTTVersion = MQTTVERSION_3_1_1;
+    conn_opts.MQTTVersion = remote_management_version;
     conn_opts.connectTimeout = 60;
     conn_opts.username="406ota";
     conn_opts.password="406ota";
