@@ -853,7 +853,7 @@ static int mqtt_connect(MQTTClient *client)
     MQTTClient_connectOptions conn_opts = MQTTClient_connectOptions_initializer;
     conn_opts.keepAliveInterval = 60;
     conn_opts.cleansession = 1;
-    conn_opts.MQTTVersion = remote_management_version;
+    conn_opts.MQTTVersion = MQTTVERSION_3_1_1;
     conn_opts.connectTimeout = 60;
     conn_opts.username="406ota";
     conn_opts.password="406ota";
